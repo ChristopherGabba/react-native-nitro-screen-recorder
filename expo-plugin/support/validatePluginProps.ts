@@ -73,6 +73,15 @@ export function validatePluginProps(props: ConfigProps): void {
     );
   }
 
+  if (
+    props.iosAppGroupIdentifier !== undefined &&
+    !props.iosAppGroupIdentifier.startsWith('group')
+  ) {
+    throw new Error(
+      `${PLUGIN_NAME}: 'iosAppGroupIdentifier' must start with group! Try changing to "group.(insert main app bundle id) or removing this line and letting the plugin manage the app group name for you.`
+    );
+  }
+
   const invalidKeys = Object.keys(props).filter(
     (k) => !VALID_PLUGIN_PROP_NAMES.includes(k)
   );
