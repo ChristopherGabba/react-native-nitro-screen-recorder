@@ -6,74 +6,125 @@ body:
   - type: textarea
     attributes:
       label: What's happening?
-      description: Explain what you are trying to do, what you expected to happen, and what actually happened. Include any error messages, symptoms, and how the issue manifests. The more detail the better.
-      placeholder: I started a global recording, but when I call stopGlobalRecording the file is undefined and no error is thrown.
+      description: Describe what you’re trying to do, what you expected, and what actually happened. Include any visible errors or misbehavior.
+      placeholder: |
+        I started a global recording, but when I call stopGlobalRecording the file is undefined and no error is thrown.
     validations:
       required: true
-  - type: textarea
+
+  - type: checkboxes
     attributes:
       label: Environment
-      description: Provide relevant environment info - package version, React Native version, Expo SDK (if used), OS version, device model, etc.
-      placeholder: |
-        react-native-nitro-screen-recorder v0.3.2
-        React Native 0.76.9
-        Expo SDK 53 (if applicable)
-        iOS 17.4.1 on iPhone 14 Pro
+      description: Check all that apply
+      options:
+        - label: I'm using Expo
+        - label: I'm on the New Architecture
+        - label: I installed `react-native-nitro-modules`
+        - label: I build with EAS
+        - label: I build locally
     validations:
-      required: true
+      required: false
+
   - type: dropdown
     attributes:
-      label: What platform(s) does this affect?
+      label: Platform(s)
       options:
         - iOS
         - Android
         - Both
-        - Other
-      description: Select the platform(s) where the bug occurs.
+      description: Select the platform(s) where the issue occurs.
     validations:
       required: true
+
   - type: textarea
     attributes:
-      label: Reproduction steps
-      description: Provide the exact steps needed to reproduce the bug. Include configuration, permission state, and any relevant setup.
+      label: Reproduction Steps
+      description: Exact steps to reproduce the bug (include any configuration, permissions, or setup steps).
       placeholder: |
         1. Start global recording with startGlobalRecording({ enableMic: true })
         2. Wait 5 seconds
         3. Call stopGlobalRecording({ settledTimeMs: 500 })
-        4. Observe that the returned file is undefined
+        4. Observe undefined file output
     validations:
       required: true
+
   - type: textarea
     attributes:
       label: Reproducible Code
-      description: >
-        Paste a minimal code example that reliably reproduces the issue, including hook usage or API calls. No need for backticks; it will be formatted automatically.
+      description: Paste a minimal code snippet that reproduces the issue. It will be formatted automatically.
       render: tsx
       placeholder: |
         const { isRecording } = useGlobalRecording({
-          onRecordingFinished: (file) => {
-            console.log('got file', file);
-          },
+          onRecordingFinished: (file) => console.log('got file', file),
         });
         startGlobalRecording({ enableMic: true });
-        // ...
     validations:
       required: false
+
   - type: textarea
     attributes:
-      label: Relevant logs
-      description: Paste logs (Console.app, Android logcat, or JavaScript) that relate to the issue. Trim unrelated noise if possible.
+      label: package.json
+      description: Paste the relevant portion (dependencies and scripts) of your package.json.
       placeholder: |
-        2025-08-04 04:34:58.521... Error: DMErr=-69642 ... stopped unexpectedly.
+        {
+          "dependencies": {
+            "react-native-nitro-screen-recorder": "0.3.2",
+            "expo": "54.0.0",
+            "react-native": "0.76.9"
+          }
+        }
     validations:
       required: false
+
+  - type: textarea
+    attributes:
+      label: app.json
+      description: Paste your Expo `app.json` configuration (omit secrets).
+      placeholder: |
+        {
+          "expo": {
+            "plugins": ["react-native-nitro-screen-recorder"]
+          }
+        }
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: app.config.ts
+      description: Paste your `app.config.ts` (omit secrets and API keys).
+      placeholder: |
+        export default {
+          expo: {
+            name: "MyApp",
+            plugins: [["react-native-nitro-screen-recorder", {}]],
+          },
+        };
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: Error / Build Logs
+      description: Paste relevant terminal, Metro, or Xcode/Gradle logs.
+      placeholder: |
+        ❌  (ios/ScreenRecorder/BroadcastWriter.swift:11:33)
+        unknown attribute 'retroactive'
+    validations:
+      required: false
+
+  - type: textarea
+    attributes:
+      label: Reproduction Project (Optional)
+      description: Paste a link to a minimal reproducible repository or Snack.
+      placeholder: https://github.com/yourname/repro-repo
+    validations:
+      required: false
+
   - type: checkboxes
     attributes:
-      label: Additional information
-      description: Please check all the boxes that apply
+      label: Confirmation
       options:
-        - label: I am using Expo with the config plugin
-        - label: I am using the bare workflow (manual native setup)
         - label: I have followed the [Troubleshooting Guide](https://github.com/margelo/react-native-nitro-screen-recorder/blob/main/docs/troubleshooting.md)
         - label: I agree to follow this project's [Code of Conduct](https://github.com/margelo/react-native-nitro-screen-recorder/blob/main/CODE_OF_CONDUCT.md)
         - label: I searched for similar issues and found none
