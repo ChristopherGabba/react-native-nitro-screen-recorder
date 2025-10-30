@@ -8,21 +8,15 @@ import CoreGraphics
 import Foundation
 import ReplayKit
 
-extension AVAssetWriter.Status: @retroactive CustomStringConvertible {
-  public var description: String {
+extension AVAssetWriter.Status {
+  var description: String {
     switch self {
-    case .cancelled:
-      return "cancelled"
-    case .completed:
-      return "completed"
-    case .failed:
-      return "failed"
-    case .unknown:
-      return "unknown"
-    case .writing:
-      return "writing"
-    @unknown default:
-      return "@unknown default"
+    case .cancelled: return "cancelled"
+    case .completed: return "completed"
+    case .failed: return "failed"
+    case .unknown: return "unknown"
+    case .writing: return "writing"
+    @unknown default: return "@unknown default"
     }
   }
 }
@@ -288,7 +282,7 @@ extension BroadcastWriter {
 
   fileprivate func captureVideoOutput(_ sampleBuffer: CMSampleBuffer) -> Bool {
     guard videoInput.isReadyForMoreMediaData else {
-      debugPrint("audioInput is not ready")
+      debugPrint("videoInput is not ready")
       return false
     }
     return videoInput.append(sampleBuffer)
