@@ -10,21 +10,21 @@
     "build:ios": "react-native build-ios --mode Debug"
   },
   "dependencies": {
-    "expo": "54.0.10",
+    "expo": "54.0.21",
     "expo-dev-client": "~6.0.10",
     "expo-status-bar": "~3.0.7",
-    "expo-video": "~3.0.10",
+    "expo-video": "~3.0.12",
     "expo-video-metadata": "^1.5.0",
     "react": "19.1.0",
-    "react-native": "0.81.4",
-    "react-native-nitro-modules": "^0.31.0",
+    "react-native": "0.81.5",
+    "react-native-nitro-modules": "^0.31.4",
     "react-native-nitro-screen-recorder": "*"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.3",
     "@babel/runtime": "^7.25.0",
-    "@expo/metro-config": "~0.21.10",
+    "@expo/metro-config": "~54.0.2",
     "@react-native-community/cli": "18.0.0",
     "@react-native-community/cli-platform-android": "18.0.0",
     "@react-native-community/cli-platform-ios": "18.0.0",
