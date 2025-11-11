@@ -136,6 +136,7 @@ public final class BroadcastWriter {
   ) throws {
     assetWriterQueue = queue
     assetWriter = try .init(url: url, fileType: .mp4)
+    assetWriter.shouldOptimizeForNetworkUse = true
 
     self.screenSize = screenSize
     self.screenScale = screenScale
