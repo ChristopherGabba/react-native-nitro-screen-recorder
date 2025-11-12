@@ -1,4 +1,44 @@
 # Changelog
+
+## [Unreleased]
+### Added
+- MP4 faststart support for streaming-friendly video files on both iOS and Android
+- iOS: Set `shouldOptimizeForNetworkUse = true` on AVAssetWriter to place moov atom at beginning of file
+- Android: Embedded QtFastStart implementation for MP4 optimization without external dependencies
+
+### Fixed
+- Videos can now be streamed progressively and processed through FFmpeg streams/pipes without requiring disk access to read metadata
+- Improves compatibility with video streaming platforms and progressive playback
+- moov atom is now correctly placed at the beginning of MP4 files for optimal streaming performance
+
+## [0.5.0] - 2025-10-30
+### Fixed
+- #13 remove retroactive for swift 5 error
+- Bump nitro modules version
+
+### Added
+- Add warning on iOS app group identifier name
+
+## [0.4.8] - 2025-10-20
+### Chore
+- Bump nitro modules version
+
+## [0.4.7] - 2025-10-06
+### Fixed
+- Fix expo config plugin issues
+
+## [0.4.3] - 2025-10-05
+### Fixed
+- Fix expo config plugin problems
+
+## [0.3.10] - 2025-09-25
+### Chore
+- Bump dependencies (nitro-modules, expo, etc.)
+
+## [0.3.9] - 2025-09-09
+### Fixed
+- Build regression on iOS
+
 ## [0.3.8] - 2025-09-8
 ### Changes
 - Fix #9, privacyinfo naming conflict with other expo config plugins

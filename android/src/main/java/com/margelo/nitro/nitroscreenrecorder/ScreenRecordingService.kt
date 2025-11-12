@@ -236,6 +236,11 @@ class ScreenRecordingService : Service() {
       isRecording = false
       recordingFile = currentRecordingFile
 
+      // Optimize MP4 for streaming (faststart)
+      recordingFile?.let {
+        recordingFile = RecorderUtils.optimizeForStreaming(it)
+      }
+
       val event = ScreenRecordingEvent(
         type = RecordingEventType.GLOBAL,
         reason = RecordingEventReason.ENDED

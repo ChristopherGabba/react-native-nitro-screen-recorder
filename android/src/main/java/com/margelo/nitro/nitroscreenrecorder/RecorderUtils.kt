@@ -10,6 +10,8 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.WindowManager
 import java.io.File
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -192,6 +194,65 @@ object RecorderUtils {
       }
     } else {
       Log.d(TAG, "ℹ️ Directory does not exist, nothing to clear.")
+    }
+  }
+
+  /**
+   * Optimizes an MP4 file for streaming by moving the moov atom to the beginning.
+   * This enables progressive playback and faster video startup.
+   *
+   * Uses embedded QtFastStart implementation for efficient moov atom relocation.
+   */
+  fun optimizeForStreaming(inputFile: File): File {
+    if (!inputFile.exists()) {
+      Log.e(TAG, "❌ Input file does not exist: ${inputFile.absolutePath}")
+      return inputFile
+    }
+
+    val tempFile = File(inputFile.parent, "${inputFile.nameWithoutExtension}_optimized.mp4")
+
+    try {
+      Log.d(TAG, "🎬 Optimizing MP4 for streaming: ${inputFile.name}")
+
+      FileInputStream(inputFile).use { fis ->
+        FileOutputStream(tempFile).use { fos ->
+          val success = com.margelo.nitro.nitroscreenrecorder.QtFastStart.fastStart(fis.channel, fos.channel)
+
+          if (success) {
+            Log.d(TAG, "✅ Moov atom successfully moved to beginning")
+          } else {
+            Log.i(TAG, "ℹ️ Moov atom already at beginning, no optimization needed")
+            // File is already optimized, clean up temp file and return original
+            tempFile.delete()
+            return inputFile
+          }
+        }
+      }
+
+      // Replace original with optimized version
+      if (inputFile.delete()) {
+        if (tempFile.renameTo(inputFile)) {
+          Log.d(TAG, "✅ MP4 optimization complete: ${inputFile.absolutePath}")
+          return inputFile
+        } else {
+          Log.e(TAG, "❌ Failed to rename optimized file")
+          tempFile.delete()
+          return inputFile
+        }
+      } else {
+        Log.e(TAG, "❌ Failed to delete original file")
+        tempFile.delete()
+        return inputFile
+      }
+
+    } catch (e: com.margelo.nitro.nitroscreenrecorder.QtFastStart.QtFastStartException) {
+      Log.e(TAG, "❌ QtFastStart error: ${e.message}", e)
+      tempFile.delete()
+      return inputFile
+    } catch (e: Exception) {
+      Log.e(TAG, "❌ Failed to optimize MP4 for streaming: ${e.message}", e)
+      tempFile.delete()
+      return inputFile
     }
   }
 }
