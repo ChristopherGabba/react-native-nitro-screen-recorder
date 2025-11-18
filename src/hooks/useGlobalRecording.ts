@@ -131,7 +131,7 @@ export const useGlobalRecording = (
           setIsRecording(false);
           // We add a small delay after the recording ends to allow the file to finish writing
           // to disk before trying to fetch it
-          delay(props?.settledTimeMs ?? 500);
+          await delay(props?.settledTimeMs ?? 500);
           const file = retrieveLastGlobalRecording();
           props?.onRecordingFinished?.(file);
         }
