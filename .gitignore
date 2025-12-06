@@ -82,5 +82,3 @@ android/keystores/debug.keystore
 ios/generated
 android/generated
 
-# React Native Nitro Modules
-nitrogen/
