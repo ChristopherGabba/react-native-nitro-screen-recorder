@@ -1,0 +1,16 @@
+import type { ConfigProps } from '../@types';
+export declare const IPHONEOS_DEPLOYMENT_TARGET = "11.0";
+export declare const TARGETED_DEVICE_FAMILY = "\"1,2\"";
+export declare const getBroadcastExtensionTargetName: (props: ConfigProps) => string;
+export declare const getBroadcastExtensionPodfileSnippet: (props: ConfigProps) => string;
+export declare const GROUP_IDENTIFIER_TEMPLATE_REGEX: RegExp;
+export declare const BUNDLE_SHORT_VERSION_TEMPLATE_REGEX: RegExp;
+export declare const BUNDLE_VERSION_TEMPLATE_REGEX: RegExp;
+export declare const SCHEME_TEMPLATE_REGEX: RegExp;
+export declare const DEFAULT_BUNDLE_VERSION = "1";
+export declare const DEFAULT_BUNDLE_SHORT_VERSION = "1.0";
+export declare const BROADCAST_EXT_SOURCE_FILES: string[];
+export declare const BROADCAST_EXT_CONFIG_FILES: string[];
+export declare const BROADCAST_EXT_ALL_FILES: string[];
+export declare const getAppGroup: (mainAppBundleId: string, props: ConfigProps) => string;
+export declare function getBroadcastExtensionBundleIdentifier(mainAppBundleId: string, props: ConfigProps): string;
