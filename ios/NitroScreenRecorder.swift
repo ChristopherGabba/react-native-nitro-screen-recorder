@@ -33,6 +33,11 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
   private var recordingEventListeners: [ScreenRecordingListenerType] = []
   public var broadcastPickerEventListeners: [Listener<BroadcastPickerViewListener>] = []
   private var nextListenerId: Double = 0
+  
+  // Separate audio file recording
+  private var separateAudioFileEnabled: Bool = false
+  private var audioRecorder: AVAudioRecorder?
+  private var audioFileURL: URL?
 
   // App state tracking for broadcast modal
   private var isBroadcastModalShowing: Bool = false
@@ -242,6 +247,7 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     enableCamera: Bool,
     cameraPreviewStyle: RecorderCameraStyle,
     cameraDevice: CameraDevice,
+    separateAudioFile: Bool,
     onRecordingFinished: @escaping RecordingFinishedCallback
   ) throws {
     safelyClearInAppRecordingFiles()
@@ -278,6 +284,7 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     }
 
     self.onInAppRecordingFinishedCallback = onRecordingFinished
+    self.separateAudioFileEnabled = separateAudioFile
     recorder.isMicrophoneEnabled = enableMic
     recorder.isCameraEnabled = enableCamera
 
@@ -286,14 +293,21 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
       recorder.cameraPosition = device
     }
     inAppRecordingActive = true
+    
+    // Start separate audio recording if enabled and mic is enabled
+    if separateAudioFile && enableMic {
+      startSeparateAudioRecording()
+    }
+    
     recorder.startRecording { [weak self] error in
       guard let self = self else { return }
       if let error = error {
         print("❌ Error starting in-app recording:", error.localizedDescription)
         inAppRecordingActive = false
+        self.stopSeparateAudioRecording()
         return
       }
-      print("✅ In-app recording started (mic:\(enableMic) camera:\(enableCamera))")
+      print("✅ In-app recording started (mic:\(enableMic) camera:\(enableCamera) separateAudio:\(separateAudioFile))")
 
       if enableCamera {
         DispatchQueue.main.async {
@@ -302,10 +316,75 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
       }
     }
   }
+  
+  private func startSeparateAudioRecording() {
+    let fileName = "audio_capture_\(UUID().uuidString).m4a"
+    audioFileURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+    
+    guard let audioURL = audioFileURL else { return }
+    
+    // Remove any existing file
+    try? FileManager.default.removeItem(at: audioURL)
+    
+    let audioSettings: [String: Any] = [
+      AVFormatIDKey: kAudioFormatMPEG4AAC,
+      AVSampleRateKey: 44100.0,
+      AVNumberOfChannelsKey: 1,
+      AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+      AVEncoderBitRateKey: 128000
+    ]
+    
+    do {
+      // Configure audio session
+      let audioSession = AVAudioSession.sharedInstance()
+      try audioSession.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+      try audioSession.setActive(true)
+      
+      audioRecorder = try AVAudioRecorder(url: audioURL, settings: audioSettings)
+      audioRecorder?.record()
+      print("✅ Separate audio recording started: \(audioURL.path)")
+    } catch {
+      print("❌ Failed to start separate audio recording: \(error.localizedDescription)")
+      audioRecorder = nil
+      audioFileURL = nil
+    }
+  }
+  
+  private func stopSeparateAudioRecording() -> AudioRecordingFile? {
+    guard let recorder = audioRecorder, let audioURL = audioFileURL else {
+      return nil
+    }
+    
+    recorder.stop()
+    audioRecorder = nil
+    
+    // Get audio file info
+    do {
+      let attrs = try FileManager.default.attributesOfItem(atPath: audioURL.path)
+      let asset = AVURLAsset(url: audioURL)
+      let duration = CMTimeGetSeconds(asset.duration)
+      
+      let audioFile = AudioRecordingFile(
+        path: audioURL.absoluteString,
+        name: audioURL.lastPathComponent,
+        size: attrs[.size] as? Double ?? 0,
+        duration: duration
+      )
+      
+      print("✅ Separate audio recording stopped: \(audioURL.path)")
+      return audioFile
+    } catch {
+      print("❌ Failed to get audio file info: \(error.localizedDescription)")
+      return nil
+    }
+  }
 
   public func stopInAppRecording() throws -> Promise<ScreenRecordingFile?> {
     return Promise.async {
       return await withCheckedContinuation { continuation in
+        // Stop separate audio recording first if enabled
+        let audioFile = self.separateAudioFileEnabled ? self.stopSeparateAudioRecording() : nil
+        
         // build a unique temp URL
         let fileName = "screen_capture_\(UUID().uuidString).mp4"
         let outputURL = FileManager.default.temporaryDirectory
@@ -340,11 +419,16 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
               name: outputURL.lastPathComponent,
               size: attrs[.size] as? Double ?? 0,
               duration: duration,
-              enabledMicrophone: self.recorder.isMicrophoneEnabled
+              enabledMicrophone: self.recorder.isMicrophoneEnabled,
+              audioFile: audioFile
             )
 
             print("✅ Recording finished and saved to:", outputURL.path)
+            if let audioFile = audioFile {
+              print("✅ Separate audio file saved to:", audioFile.path)
+            }
             self.onInAppRecordingFinishedCallback?(file)
+            self.separateAudioFileEnabled = false
             continuation.resume(returning: file)
           } catch {
             print("⚠️ Failed to build ScreenRecordingFile:", error.localizedDescription)
@@ -358,6 +442,12 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
   public func cancelInAppRecording() throws -> Promise<Void> {
     return Promise.async {
       return await withCheckedContinuation { continuation in
+        // Stop separate audio recording if active
+        if self.separateAudioFileEnabled {
+          _ = self.stopSeparateAudioRecording()
+          self.separateAudioFileEnabled = false
+        }
+        
         // If a recording session is in progress, stop it and write out to a temp URL
         if self.recorder.isRecording {
           let tempURL = FileManager.default.temporaryDirectory
@@ -452,7 +542,7 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     }
   }
 
-  func startGlobalRecording(enableMic: Bool, onRecordingError: @escaping (RecordingError) -> Void)
+  func startGlobalRecording(enableMic: Bool, separateAudioFile: Bool, onRecordingError: @escaping (RecordingError) -> Void)
     throws
   {
     guard !isGlobalRecordingActive else {
@@ -487,6 +577,10 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
       onRecordingError(error)
       return
     }
+
+    // Store the separateAudioFile preference for the broadcast extension to read
+    self.separateAudioFileEnabled = separateAudioFile
+    UserDefaults(suiteName: appGroupId)?.set(separateAudioFile, forKey: "SeparateAudioFileEnabled")
 
     // Present the broadcast picker
     presentGlobalBroadcastModal(enableMicrophone: enableMic)
@@ -612,13 +706,53 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     let micEnabled =
       UserDefaults(suiteName: appGroupId)?
       .bool(forKey: "LastBroadcastMicrophoneWasEnabled") ?? false
+    
+    // Check for and retrieve separate audio file
+    var audioFile: AudioRecordingFile? = nil
+    let hadSeparateAudio = UserDefaults(suiteName: appGroupId)?.bool(forKey: "LastBroadcastHadSeparateAudio") ?? false
+    
+    if hadSeparateAudio,
+       let audioFileName = UserDefaults(suiteName: appGroupId)?.string(forKey: "LastBroadcastAudioFileName") {
+      let audioSourceURL = docsURL.appendingPathComponent(audioFileName)
+      
+      if fm.fileExists(atPath: audioSourceURL.path) {
+        // Copy audio file to caches
+        var audioDestinationURL = recordingsDir.appendingPathComponent(audioFileName)
+        if fm.fileExists(atPath: audioDestinationURL.path) {
+          let ts = Int(Date().timeIntervalSince1970)
+          let base = audioSourceURL.deletingPathExtension().lastPathComponent
+          audioDestinationURL = recordingsDir.appendingPathComponent("\(base)-\(ts).m4a")
+        }
+        
+        do {
+          try fm.copyItem(at: audioSourceURL, to: audioDestinationURL)
+          
+          let audioAttrs = try fm.attributesOfItem(atPath: audioDestinationURL.path)
+          let audioSize = (audioAttrs[.size] as? NSNumber)?.doubleValue ?? 0.0
+          
+          let audioAsset = AVURLAsset(url: audioDestinationURL)
+          let audioDuration = CMTimeGetSeconds(audioAsset.duration)
+          
+          audioFile = AudioRecordingFile(
+            path: audioDestinationURL.absoluteString,
+            name: audioDestinationURL.lastPathComponent,
+            size: audioSize,
+            duration: audioDuration
+          )
+          print("✅ Retrieved separate audio file: \(audioDestinationURL.path)")
+        } catch {
+          print("⚠️ Failed to copy audio file: \(error.localizedDescription)")
+        }
+      }
+    }
 
     return ScreenRecordingFile(
       path: destinationURL.absoluteString,
       name: destinationURL.lastPathComponent,
       size: size,
       duration: duration,
-      enabledMicrophone: micEnabled
+      enabledMicrophone: micEnabled,
+      audioFile: audioFile
     )
   }
 

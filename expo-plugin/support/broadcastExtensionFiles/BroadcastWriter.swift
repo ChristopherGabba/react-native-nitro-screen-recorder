@@ -41,8 +41,14 @@ enum Error: Swift.Error {
 public final class BroadcastWriter {
 
   private var assetWriterSessionStarted: Bool = false
+  private var audioAssetWriterSessionStarted: Bool = false
   private let assetWriterQueue: DispatchQueue
   private let assetWriter: AVAssetWriter
+  
+  // Separate audio writer
+  private var separateAudioWriter: AVAssetWriter?
+  private let separateAudioFile: Bool
+  private let audioOutputURL: URL?
 
   private lazy var videoInput: AVAssetWriterInput = { [unowned self] in
     let videoWidth = screenSize.width * screenScale
@@ -118,6 +124,22 @@ public final class BroadcastWriter {
     input.expectsMediaDataInRealTime = true
     return input
   }()
+  
+  // Separate audio file input (for microphone audio only)
+  private lazy var separateAudioInput: AVAssetWriterInput = {
+    var audioSettings: [String: Any] = [
+      AVFormatIDKey: kAudioFormatMPEG4AAC,
+      AVNumberOfChannelsKey: 1,
+      AVSampleRateKey: audioSampleRate,
+      AVEncoderBitRateKey: 128000,
+    ]
+    let input: AVAssetWriterInput = .init(
+      mediaType: .audio,
+      outputSettings: audioSettings
+    )
+    input.expectsMediaDataInRealTime = true
+    return input
+  }()
 
   private lazy var inputs: [AVAssetWriterInput] = [
     videoInput,
@@ -130,9 +152,11 @@ public final class BroadcastWriter {
 
   public init(
     outputURL url: URL,
+    audioOutputURL: URL? = nil,
     assetWriterQueue queue: DispatchQueue = .init(label: "BroadcastSampleHandler.assetWriterQueue"),
     screenSize: CGSize,
-    screenScale: CGFloat
+    screenScale: CGFloat,
+    separateAudioFile: Bool = false
   ) throws {
     assetWriterQueue = queue
     assetWriter = try .init(url: url, fileType: .mp4)
@@ -140,6 +164,14 @@ public final class BroadcastWriter {
 
     self.screenSize = screenSize
     self.screenScale = screenScale
+    self.separateAudioFile = separateAudioFile
+    self.audioOutputURL = audioOutputURL
+    
+    // Initialize separate audio writer if needed
+    if separateAudioFile, let audioURL = audioOutputURL {
+      separateAudioWriter = try .init(url: audioURL, fileType: .m4a)
+      separateAudioWriter?.shouldOptimizeForNetworkUse = true
+    }
   }
 
   public func start() throws {
@@ -161,6 +193,21 @@ public final class BroadcastWriter {
       assetWriter.startWriting()
       try assetWriter.error.map {
         throw $0
+      }
+      
+      // Start separate audio writer if enabled
+      if separateAudioFile, let audioWriter = separateAudioWriter {
+        let audioStatus = audioWriter.status
+        guard audioStatus == .unknown else {
+          throw Error.wrongAssetWriterStatus(audioStatus)
+        }
+        try audioWriter.error.map { throw $0 }
+        if audioWriter.canAdd(separateAudioInput) {
+          audioWriter.add(separateAudioInput)
+        }
+        try audioWriter.error.map { throw $0 }
+        audioWriter.startWriting()
+        try audioWriter.error.map { throw $0 }
       }
     }
   }
@@ -206,6 +253,12 @@ public final class BroadcastWriter {
       capture = captureAudioOutput
     case .audioMic:
       capture = captureMicrophoneOutput
+      // Also write to separate audio file if enabled
+      if separateAudioFile {
+        assetWriterQueue.sync {
+          _ = captureSeparateAudioOutput(sampleBuffer)
+        }
+      }
     @unknown default:
       debugPrint(#file, "Unknown type of sample buffer, \(sampleBufferType)")
       capture = { _ in false }
@@ -224,7 +277,18 @@ public final class BroadcastWriter {
     // TODO: Resume
   }
 
+  /// Result containing both video and optional audio URLs
+  public struct FinishResult {
+    public let videoURL: URL
+    public let audioURL: URL?
+  }
+  
   public func finish() throws -> URL {
+    let result = try finishWithAudio()
+    return result.videoURL
+  }
+  
+  public func finishWithAudio() throws -> FinishResult {
     return try assetWriterQueue.sync {
       let group: DispatchGroup = .init()
 
@@ -264,7 +328,38 @@ public final class BroadcastWriter {
       }
       group.wait()
       try error.map { throw $0 }
-      return assetWriter.outputURL
+      
+      // Finish separate audio writer if enabled
+      var audioURL: URL? = nil
+      if separateAudioFile, let audioWriter = separateAudioWriter {
+        if separateAudioInput.isReadyForMoreMediaData {
+          separateAudioInput.markAsFinished()
+        }
+        
+        if audioWriter.status == .writing {
+          let audioGroup = DispatchGroup()
+          audioGroup.enter()
+          
+          var audioError: Swift.Error?
+          audioWriter.finishWriting {
+            defer { audioGroup.leave() }
+            if let e = audioWriter.error {
+              audioError = e
+              return
+            }
+            if audioWriter.status != .completed {
+              audioError = Error.wrongAssetWriterStatus(audioWriter.status)
+            }
+          }
+          audioGroup.wait()
+          
+          if audioError == nil {
+            audioURL = audioWriter.outputURL
+          }
+        }
+      }
+      
+      return FinishResult(videoURL: assetWriter.outputURL, audioURL: audioURL)
     }
   }
 }
@@ -279,6 +374,16 @@ extension BroadcastWriter {
     let sourceTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
     assetWriter.startSession(atSourceTime: sourceTime)
     assetWriterSessionStarted = true
+  }
+  
+  fileprivate func startAudioSessionIfNeeded(sampleBuffer: CMSampleBuffer) {
+    guard !audioAssetWriterSessionStarted, let audioWriter = separateAudioWriter else {
+      return
+    }
+
+    let sourceTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+    audioWriter.startSession(atSourceTime: sourceTime)
+    audioAssetWriterSessionStarted = true
   }
 
   fileprivate func captureVideoOutput(_ sampleBuffer: CMSampleBuffer) -> Bool {
@@ -304,5 +409,26 @@ extension BroadcastWriter {
       return false
     }
     return microphoneInput.append(sampleBuffer)
+  }
+  
+  fileprivate func captureSeparateAudioOutput(_ sampleBuffer: CMSampleBuffer) -> Bool {
+    guard separateAudioFile, let audioWriter = separateAudioWriter else {
+      return false
+    }
+    
+    // Check if audio writer is still writing
+    guard audioWriter.status == .writing else {
+      debugPrint("separateAudioWriter is not writing, status: \(audioWriter.status.description)")
+      return false
+    }
+    
+    // Start session if needed
+    startAudioSessionIfNeeded(sampleBuffer: sampleBuffer)
+    
+    guard separateAudioInput.isReadyForMoreMediaData else {
+      debugPrint("separateAudioInput is not ready")
+      return false
+    }
+    return separateAudioInput.append(sampleBuffer)
   }
 }

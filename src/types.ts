@@ -118,12 +118,24 @@ export type InAppRecordingOptions =
       cameraPreviewStyle: RecorderCameraStyle;
       /** Which camera to use */
       cameraDevice: CameraDevice;
+      /**
+       * Whether to write audio to a separate file alongside the video.
+       * When enabled, the audioFile property will be populated in ScreenRecordingFile.
+       * @default false
+       */
+      separateAudioFile?: boolean;
     }
   | {
       /** Camera is disabled - no camera options needed */
       enableCamera: false;
       /** Whether to record microphone audio */
       enableMic: boolean;
+      /**
+       * Whether to write audio to a separate file alongside the video.
+       * When enabled, the audioFile property will be populated in ScreenRecordingFile.
+       * @default false
+       */
+      separateAudioFile?: boolean;
     };
 
 /**
@@ -157,6 +169,18 @@ export type InAppRecordingInput = {
 export type GlobalRecordingInputOptions = {
   /** Whether to record microphone audio during the global recording. */
   enableMic: boolean;
+  /**
+   * Whether to write audio to a separate file alongside the video.
+   * When enabled, the audioFile property will be populated in ScreenRecordingFile.
+   * The separate audio file will contain microphone audio (if enabled).
+   *
+   * On both iOS and Android, the video will contain embedded audio AND
+   * a separate audio file will be created. On Android, the audio is extracted
+   * from the video after recording stops.
+   *
+   * @default false
+   */
+  separateAudioFile?: boolean;
 };
 
 /**
@@ -183,6 +207,30 @@ export type GlobalRecordingInput = {
 };
 
 /**
+ * Represents a separate audio file recorded alongside the video.
+ *
+ * @example
+ * ```typescript
+ * const audioFile: AudioRecordingFile = {
+ *   path: '/path/to/recording.m4a',
+ *   name: 'screen_recording_2024_01_15.m4a',
+ *   size: 1048576, // 1MB in bytes
+ *   duration: 30.5 // 30.5 seconds
+ * };
+ * ```
+ */
+export interface AudioRecordingFile {
+  /** Full file system path to the audio file */
+  path: string;
+  /** Display name of the audio file */
+  name: string;
+  /** File size in bytes */
+  size: number;
+  /** Audio duration in seconds */
+  duration: number;
+}
+
+/**
  * Represents a completed screen recording file with metadata.
  * Contains all information needed to access and display the recording.
  *
@@ -193,7 +241,13 @@ export type GlobalRecordingInput = {
  *   name: 'screen_recording_2024_01_15.mp4',
  *   size: 15728640, // 15MB in bytes
  *   duration: 30.5, // 30.5 seconds
- *   enabledMicrophone: true
+ *   enabledMicrophone: true,
+ *   audioFile: {
+ *     path: '/path/to/recording.m4a',
+ *     name: 'screen_recording_2024_01_15.m4a',
+ *     size: 1048576,
+ *     duration: 30.5
+ *   }
  * };
  * ```
  */
@@ -208,6 +262,8 @@ export interface ScreenRecordingFile {
   duration: number;
   /** Whether microphone audio was recorded */
   enabledMicrophone: boolean;
+  /** Optional separate audio file (when separateAudioFile option is enabled) */
+  audioFile?: AudioRecordingFile;
 }
 
 /**
