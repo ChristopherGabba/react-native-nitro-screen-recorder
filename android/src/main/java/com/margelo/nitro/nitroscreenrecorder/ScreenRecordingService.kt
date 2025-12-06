@@ -24,6 +24,10 @@ class ScreenRecordingService : Service() {
   private var isRecording = false
   private var currentRecordingFile: File? = null
   private var enableMic = false
+  
+  // Separate audio file extraction (done post-recording)
+  private var separateAudioFile = false
+  private var currentAudioFile: File? = null
 
   private var screenWidth = 0
   private var screenHeight = 0
@@ -50,6 +54,7 @@ class ScreenRecordingService : Service() {
     const val EXTRA_RESULT_CODE = "RESULT_CODE"
     const val EXTRA_RESULT_DATA = "RESULT_DATA"
     const val EXTRA_ENABLE_MIC = "ENABLE_MIC"
+    const val EXTRA_SEPARATE_AUDIO = "SEPARATE_AUDIO"
   }
 
   inner class LocalBinder : Binder() {
@@ -88,14 +93,15 @@ class ScreenRecordingService : Service() {
           intent.getIntExtra(EXTRA_RESULT_CODE, Activity.RESULT_CANCELED)
         val resultData = intent.getParcelableExtra<Intent>(EXTRA_RESULT_DATA)
         val enableMicrophone = intent.getBooleanExtra(EXTRA_ENABLE_MIC, false)
+        val separateAudio = intent.getBooleanExtra(EXTRA_SEPARATE_AUDIO, false)
 
         Log.d(
           TAG,
-          "🎬 Start recording: resultCode=$resultCode, enableMic=$enableMicrophone"
+          "🎬 Start recording: resultCode=$resultCode, enableMic=$enableMicrophone, separateAudio=$separateAudio"
         )
 
         if (resultData != null) {
-          startRecording(resultCode, resultData, enableMicrophone)
+          startRecording(resultCode, resultData, enableMicrophone, separateAudio)
         } else {
           Log.e(TAG, "❌ ResultData is null, cannot start recording")
         }
@@ -141,11 +147,12 @@ class ScreenRecordingService : Service() {
   fun startRecording(
     resultCode: Int,
     resultData: Intent,
-    enableMicrophone: Boolean
+    enableMicrophone: Boolean,
+    separateAudio: Boolean = false
   ) {
     Log.d(
       TAG,
-      "🎬 startRecording called: resultCode=$resultCode, enableMic=$enableMicrophone"
+      "🎬 startRecording called: resultCode=$resultCode, enableMic=$enableMicrophone, separateAudio=$separateAudio"
     )
 
     if (isRecording) {
@@ -155,6 +162,7 @@ class ScreenRecordingService : Service() {
 
     try {
       this.enableMic = enableMicrophone
+      this.separateAudioFile = separateAudio
 
       startForeground(NOTIFICATION_ID, createForegroundNotification(false))
 
@@ -173,6 +181,8 @@ class ScreenRecordingService : Service() {
       currentRecordingFile =
         RecorderUtils.createOutputFile(recordingsDir, "global_recording")
 
+      // Record video with audio embedded normally
+      // If separateAudioFile is requested, we'll extract it after recording stops
       mediaRecorder = RecorderUtils.setupMediaRecorder(
         this,
         enableMicrophone,
@@ -230,6 +240,7 @@ class ScreenRecordingService : Service() {
     }
 
     var recordingFile: File? = null
+    var audioFile: File? = null
 
     try {
       mediaRecorder?.stop()
@@ -241,12 +252,29 @@ class ScreenRecordingService : Service() {
         recordingFile = RecorderUtils.optimizeForStreaming(it)
       }
 
+      // Extract audio to separate file if requested and mic was enabled
+      if (separateAudioFile && enableMic && recordingFile != null) {
+        val base = applicationContext.externalCacheDir ?: applicationContext.filesDir
+        val recordingsDir = File(base, "recordings")
+        currentAudioFile = RecorderUtils.createAudioOutputFile(recordingsDir, "global_recording_audio")
+        
+        val extracted = RecorderUtils.extractAudioFromVideo(recordingFile!!, currentAudioFile!!)
+        if (extracted) {
+          audioFile = currentAudioFile
+          Log.d(TAG, "🎵 Audio extracted to separate file: ${audioFile?.absolutePath}")
+        } else {
+          Log.w(TAG, "⚠️ Failed to extract audio from video")
+          currentAudioFile?.delete()
+          currentAudioFile = null
+        }
+      }
+
       val event = ScreenRecordingEvent(
         type = RecordingEventType.GLOBAL,
         reason = RecordingEventReason.ENDED
       )
       recordingFile?.let {
-        NitroScreenRecorder.notifyGlobalRecordingFinished(it, event, enableMic)
+        NitroScreenRecorder.notifyGlobalRecordingFinished(it, audioFile, event, enableMic)
       }
 
       Log.d(TAG, "🎉 Global screen recording stopped successfully")
@@ -276,6 +304,10 @@ class ScreenRecordingService : Service() {
       virtualDisplay = null
       mediaRecorder?.release()
       mediaRecorder = null
+      
+      // Reset audio file state
+      currentAudioFile = null
+      separateAudioFile = false
 
       // Unregister callback before stopping MediaProjection
       mediaProjection?.unregisterCallback(mediaProjectionCallback)

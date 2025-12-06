@@ -35,15 +35,23 @@ final class SampleHandler: RPBroadcastSampleHandler {
   private var writer: BroadcastWriter?
   private let fileManager: FileManager = .default
   private let nodeURL: URL
+  private let audioNodeURL: URL
   private var sawMicBuffers = false
+  private var separateAudioFile: Bool = false
 
   // MARK: – Init
   override init() {
+    let uuid = UUID().uuidString
     nodeURL = fileManager.temporaryDirectory
-      .appendingPathComponent(UUID().uuidString)
+      .appendingPathComponent(uuid)
       .appendingPathExtension(for: .mpeg4Movie)
+    
+    audioNodeURL = fileManager.temporaryDirectory
+      .appendingPathComponent("\(uuid)_audio")
+      .appendingPathExtension("m4a")
 
     fileManager.removeFileIfExists(url: nodeURL)
+    fileManager.removeFileIfExists(url: audioNodeURL)
     super.init()
   }
   
@@ -95,6 +103,11 @@ final class SampleHandler: RPBroadcastSampleHandler {
       return
     }
 
+    // Check if separate audio file is requested
+    if let userDefaults = UserDefaults(suiteName: groupID) {
+      separateAudioFile = userDefaults.bool(forKey: "SeparateAudioFileEnabled")
+    }
+
     // Clean up old recordings
     cleanupOldRecordings(in: groupID)
 
@@ -103,8 +116,10 @@ final class SampleHandler: RPBroadcastSampleHandler {
     do {
       writer = try .init(
         outputURL: nodeURL,
+        audioOutputURL: separateAudioFile ? audioNodeURL : nil,
         screenSize: screen.bounds.size,
-        screenScale: screen.scale
+        screenScale: screen.scale,
+        separateAudioFile: separateAudioFile
       )
       try writer?.start()
     } catch {
@@ -160,10 +175,10 @@ final class SampleHandler: RPBroadcastSampleHandler {
   override func broadcastFinished() {
     guard let writer else { return }
 
-    // Finish writing
-    let outputURL: URL
+    // Finish writing - use finishWithAudio to get both video and audio URLs
+    let result: BroadcastWriter.FinishResult
     do {
-      outputURL = try writer.finish()
+      result = try writer.finishWithAudio()
     } catch {
       // Writer failed, but we can't call finishBroadcastWithError here
       // as we're already in the finish process
@@ -185,18 +200,38 @@ final class SampleHandler: RPBroadcastSampleHandler {
       return
     }
 
-    // Move file to shared container
-    let destination = containerURL.appendingPathComponent(outputURL.lastPathComponent)
+    // Move video file to shared container
+    let videoDestination = containerURL.appendingPathComponent(result.videoURL.lastPathComponent)
     do {
-      try fileManager.moveItem(at: outputURL, to: destination)
+      try fileManager.moveItem(at: result.videoURL, to: videoDestination)
     } catch {
       // File move failed, but we can't error out at this point
       return
     }
+    
+    // Move audio file to shared container if it exists
+    if let audioURL = result.audioURL {
+      let audioDestination = containerURL.appendingPathComponent(audioURL.lastPathComponent)
+      do {
+        try fileManager.moveItem(at: audioURL, to: audioDestination)
+        // Store audio file name for retrieval
+        UserDefaults(suiteName: groupID)?
+          .set(audioDestination.lastPathComponent, forKey: "LastBroadcastAudioFileName")
+      } catch {
+        // Audio file move failed, but video is already saved
+        debugPrint("Failed to move audio file: \(error)")
+      }
+    } else {
+      // Clear audio file name if no separate audio
+      UserDefaults(suiteName: groupID)?
+        .removeObject(forKey: "LastBroadcastAudioFileName")
+    }
 
-    // Persist microphone state
+    // Persist microphone state and audio file state
     UserDefaults(suiteName: groupID)?
       .set(sawMicBuffers, forKey: "LastBroadcastMicrophoneWasEnabled")
+    UserDefaults(suiteName: groupID)?
+      .set(separateAudioFile, forKey: "LastBroadcastHadSeparateAudio")
   }
 }
 

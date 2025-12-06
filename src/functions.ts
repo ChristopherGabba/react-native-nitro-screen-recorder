@@ -141,6 +141,7 @@ export async function startInAppRecording(
       input.options.enableCamera,
       input.options.cameraPreviewStyle ?? {},
       input.options.cameraDevice,
+      input.options.separateAudioFile ?? false,
       input.onRecordingFinished
       // input.onRecordingError
     );
@@ -150,6 +151,7 @@ export async function startInAppRecording(
       input.options.enableCamera,
       {},
       'front',
+      input.options.separateAudioFile ?? false,
       input.onRecordingFinished
       // input.onRecordingError
     );
@@ -222,6 +224,7 @@ export function startGlobalRecording(input: GlobalRecordingInput): void {
   }
   return NitroScreenRecorderHybridObject.startGlobalRecording(
     input?.options?.enableMic ?? false,
+    input?.options?.separateAudioFile ?? false,
     input?.onRecordingError
   );
 }

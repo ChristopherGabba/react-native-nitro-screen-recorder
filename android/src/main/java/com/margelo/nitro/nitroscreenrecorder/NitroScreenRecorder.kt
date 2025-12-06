@@ -33,6 +33,7 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
   private var globalRecordingService: ScreenRecordingService? = null
   private var isServiceBound = false
   private var lastGlobalRecording: File? = null
+  private var lastGlobalAudioRecording: File? = null
   private var globalRecordingErrorCallback: ((RecordingError) -> Unit)? = null
 
   private val screenRecordingListeners =
@@ -64,12 +65,14 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
 
     fun notifyGlobalRecordingFinished(
       file: File,
+      audioFile: File?,
       event: ScreenRecordingEvent,
       enabledMic: Boolean
     ) {
-      Log.d(TAG, "🏁 notifyGlobalRecordingFinished called with file: ${file.absolutePath}")
+      Log.d(TAG, "🏁 notifyGlobalRecordingFinished called with file: ${file.absolutePath}, audioFile: ${audioFile?.absolutePath}")
       instance?.let { recorder ->
         recorder.lastGlobalRecording = file
+        recorder.lastGlobalAudioRecording = audioFile
         recorder.notifyListeners(event)
       }
     }
@@ -275,6 +278,7 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
     enableCamera: Boolean,
     cameraPreviewStyle: RecorderCameraStyle,
     cameraDevice: CameraDevice,
+    separateAudioFile: Boolean,
     onRecordingFinished: (ScreenRecordingFile) -> Unit
   ) {
     // no-op
@@ -297,7 +301,7 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
 
   // --- Global Recording Methods ---
 
-  override fun startGlobalRecording(enableMic: Boolean, onRecordingError: (RecordingError) -> Unit) {
+  override fun startGlobalRecording(enableMic: Boolean, separateAudioFile: Boolean, onRecordingError: (RecordingError) -> Unit) {
     if (globalRecordingService?.isCurrentlyRecording() == true) {
       Log.w(TAG, "⚠️ Global recording already in progress")
       return
@@ -317,7 +321,8 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
         action = ScreenRecordingService.ACTION_START_RECORDING
         putExtra(ScreenRecordingService.EXTRA_RESULT_CODE, resultCode)
         putExtra(ScreenRecordingService.EXTRA_RESULT_DATA, resultData)
-        putExtra(ScreenRecordingService.EXTRA_ENABLE_MIC, enableMic) // Use the parameter instead of hardcoded true
+        putExtra(ScreenRecordingService.EXTRA_ENABLE_MIC, enableMic)
+        putExtra(ScreenRecordingService.EXTRA_SEPARATE_AUDIO, separateAudioFile)
       }
 
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -362,12 +367,27 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
   override fun retrieveLastGlobalRecording(): ScreenRecordingFile? {
     return lastGlobalRecording?.let { file ->
       if (file.exists()) {
+        // Build audio file info if available
+        val audioFile = lastGlobalAudioRecording?.let { audioFile ->
+          if (audioFile.exists()) {
+            AudioRecordingFile(
+              path = "file://${audioFile.absolutePath}",
+              name = audioFile.name,
+              size = audioFile.length().toDouble(),
+              duration = RecorderUtils.getAudioDuration(audioFile)
+            )
+          } else {
+            null
+          }
+        }
+        
         ScreenRecordingFile(
           path = "file://${file.absolutePath}",
           name = file.name,
           size = file.length().toDouble(),
           duration = RecorderUtils.getVideoDuration(file),
-          enabledMicrophone = true // Assume true for global recordings
+          enabledMicrophone = true, // Assume true for global recordings
+          audioFile = audioFile
         )
       } else {
         null
@@ -381,5 +401,6 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
     val globalDir = File(ctx.filesDir, "recordings")
     RecorderUtils.clearDirectory(globalDir)
     lastGlobalRecording = null
+    lastGlobalAudioRecording = null
   }
 }

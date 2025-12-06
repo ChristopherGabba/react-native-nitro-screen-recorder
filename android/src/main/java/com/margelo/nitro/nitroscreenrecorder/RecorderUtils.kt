@@ -103,6 +103,25 @@ object RecorderUtils {
   }
 
   /**
+   * Creates a new audio file in the specified directory.
+   */
+  fun createAudioOutputFile(directory: File, prefix: String): File {
+    Log.d(TAG, "📁 Creating audio output file with prefix '$prefix'...")
+    if (!directory.exists()) {
+      Log.d(TAG, "📁 Creating directory: ${directory.absolutePath}")
+      directory.mkdirs()
+    }
+
+    val timestamp =
+      SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    // Use .m4a extension for extracted audio (AAC in MPEG-4 container)
+    val fileName = "${prefix}_$timestamp.m4a"
+    val file = File(directory, fileName)
+    Log.d(TAG, "📁 Created audio output file: ${file.absolutePath}")
+    return file
+  }
+
+  /**
   * Retrieves the duration of a video file in **seconds**.
   */
   fun getVideoDuration(file: File): Double {
@@ -178,13 +197,131 @@ object RecorderUtils {
   }
 
   /**
-   * Deletes all .mp4 files in a given directory.
+   * Retrieves the duration of an audio file in **seconds**.
+   */
+  fun getAudioDuration(file: File): Double {
+    if (!file.exists()) return 0.0
+    return try {
+      val retriever = MediaMetadataRetriever().apply {
+        setDataSource(file.absolutePath)
+      }
+      val seconds = retriever
+        .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+        ?.toDouble()
+        ?.div(1_000.0) ?: 0.0
+      retriever.release()
+      seconds
+    } catch (e: Exception) {
+      Log.w(TAG, "Could not get audio duration: ${e.message}")
+      0.0
+    }
+  }
+  
+  /**
+   * Extracts the audio track from a video file and saves it as a separate M4A file.
+   * This allows having audio in both the video AND a separate audio file.
+   * 
+   * @param videoFile The source video file containing audio
+   * @param audioOutputFile The destination file for the extracted audio
+   * @return true if extraction was successful, false otherwise
+   */
+  fun extractAudioFromVideo(videoFile: File, audioOutputFile: File): Boolean {
+    if (!videoFile.exists()) {
+      Log.e(TAG, "❌ Video file does not exist: ${videoFile.absolutePath}")
+      return false
+    }
+    
+    var extractor: android.media.MediaExtractor? = null
+    var muxer: android.media.MediaMuxer? = null
+    
+    try {
+      Log.d(TAG, "🎵 Extracting audio from video: ${videoFile.name}")
+      
+      extractor = android.media.MediaExtractor()
+      extractor.setDataSource(videoFile.absolutePath)
+      
+      // Find the audio track
+      var audioTrackIndex = -1
+      var audioFormat: android.media.MediaFormat? = null
+      
+      for (i in 0 until extractor.trackCount) {
+        val format = extractor.getTrackFormat(i)
+        val mime = format.getString(android.media.MediaFormat.KEY_MIME)
+        if (mime?.startsWith("audio/") == true) {
+          audioTrackIndex = i
+          audioFormat = format
+          break
+        }
+      }
+      
+      if (audioTrackIndex == -1 || audioFormat == null) {
+        Log.w(TAG, "⚠️ No audio track found in video file")
+        return false
+      }
+      
+      Log.d(TAG, "📍 Found audio track at index $audioTrackIndex")
+      
+      // Select the audio track
+      extractor.selectTrack(audioTrackIndex)
+      
+      // Create muxer for output
+      muxer = android.media.MediaMuxer(
+        audioOutputFile.absolutePath,
+        android.media.MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+      )
+      
+      val outputTrackIndex = muxer.addTrack(audioFormat)
+      muxer.start()
+      
+      // Allocate buffer for reading samples
+      val maxBufferSize = audioFormat.getInteger(android.media.MediaFormat.KEY_MAX_INPUT_SIZE, 1024 * 1024)
+      val buffer = java.nio.ByteBuffer.allocate(maxBufferSize)
+      val bufferInfo = android.media.MediaCodec.BufferInfo()
+      
+      // Copy all audio samples
+      while (true) {
+        val sampleSize = extractor.readSampleData(buffer, 0)
+        if (sampleSize < 0) {
+          break
+        }
+        
+        bufferInfo.offset = 0
+        bufferInfo.size = sampleSize
+        bufferInfo.presentationTimeUs = extractor.sampleTime
+        bufferInfo.flags = extractor.sampleFlags
+        
+        muxer.writeSampleData(outputTrackIndex, buffer, bufferInfo)
+        extractor.advance()
+      }
+      
+      Log.d(TAG, "✅ Audio extraction complete: ${audioOutputFile.name}")
+      return true
+      
+    } catch (e: Exception) {
+      Log.e(TAG, "❌ Error extracting audio: ${e.message}")
+      e.printStackTrace()
+      // Clean up failed output file
+      audioOutputFile.delete()
+      return false
+    } finally {
+      try {
+        muxer?.stop()
+        muxer?.release()
+      } catch (e: Exception) {
+        Log.w(TAG, "Warning during muxer cleanup: ${e.message}")
+      }
+      extractor?.release()
+    }
+  }
+
+  /**
+   * Deletes all .mp4 and .m4a files in a given directory.
    */
   fun clearDirectory(directory: File) {
     Log.d(TAG, "🧹 Clearing directory: ${directory.absolutePath}")
     if (directory.exists() && directory.isDirectory) {
       directory.listFiles()?.forEach { file ->
-        if (file.isFile && file.name.endsWith(".mp4")) {
+        if (file.isFile && (file.name.endsWith(".mp4") || file.name.endsWith(".m4a"))) {
           if (file.delete()) {
             Log.d(TAG, "🗑️ Deleted file: ${file.name}")
           } else {

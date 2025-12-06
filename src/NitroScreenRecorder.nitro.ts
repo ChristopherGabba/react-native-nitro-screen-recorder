@@ -55,6 +55,7 @@ export interface NitroScreenRecorder
     enableCamera: boolean,
     cameraPreviewStyle: RecorderCameraStyle,
     cameraDevice: CameraDevice,
+    separateAudioFile: boolean,
     onRecordingFinished: (file: ScreenRecordingFile) => void
     // onRecordingError: (error: RecordingError) => void
   ): void;
@@ -67,6 +68,7 @@ export interface NitroScreenRecorder
 
   startGlobalRecording(
     enableMic: boolean,
+    separateAudioFile: boolean,
     onRecordingError: (error: RecordingError) => void
   ): void;
   stopGlobalRecording(
