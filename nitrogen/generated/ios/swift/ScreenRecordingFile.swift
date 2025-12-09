@@ -18,9 +18,15 @@ public extension ScreenRecordingFile {
   /**
    * Create a new instance of `ScreenRecordingFile`.
    */
-  init(path: String, name: String, size: Double, duration: Double, enabledMicrophone: Bool, audioFile: AudioRecordingFile?) {
+  init(path: String, name: String, size: Double, duration: Double, enabledMicrophone: Bool, audioFile: AudioRecordingFile?, appAudioFile: AudioRecordingFile?) {
     self.init(std.string(path), std.string(name), size, duration, enabledMicrophone, { () -> bridge.std__optional_AudioRecordingFile_ in
       if let __unwrappedValue = audioFile {
+        return bridge.create_std__optional_AudioRecordingFile_(__unwrappedValue)
+      } else {
+        return .init()
+      }
+    }(), { () -> bridge.std__optional_AudioRecordingFile_ in
+      if let __unwrappedValue = appAudioFile {
         return bridge.create_std__optional_AudioRecordingFile_(__unwrappedValue)
       } else {
         return .init()
@@ -91,6 +97,23 @@ public extension ScreenRecordingFile {
     @inline(__always)
     set {
       self.__audioFile = { () -> bridge.std__optional_AudioRecordingFile_ in
+        if let __unwrappedValue = newValue {
+          return bridge.create_std__optional_AudioRecordingFile_(__unwrappedValue)
+        } else {
+          return .init()
+        }
+      }()
+    }
+  }
+  
+  var appAudioFile: AudioRecordingFile? {
+    @inline(__always)
+    get {
+      return self.__appAudioFile.value
+    }
+    @inline(__always)
+    set {
+      self.__appAudioFile = { () -> bridge.std__optional_AudioRecordingFile_ in
         if let __unwrappedValue = newValue {
           return bridge.create_std__optional_AudioRecordingFile_(__unwrappedValue)
         } else {

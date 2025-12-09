@@ -243,9 +243,15 @@ export interface AudioRecordingFile {
  *   duration: 30.5, // 30.5 seconds
  *   enabledMicrophone: true,
  *   audioFile: {
- *     path: '/path/to/recording.m4a',
- *     name: 'screen_recording_2024_01_15.m4a',
+ *     path: '/path/to/mic_audio.m4a',
+ *     name: 'mic_audio.m4a',
  *     size: 1048576,
+ *     duration: 30.5
+ *   },
+ *   appAudioFile: {
+ *     path: '/path/to/app_audio.m4a',
+ *     name: 'app_audio.m4a',
+ *     size: 2097152,
  *     duration: 30.5
  *   }
  * };
@@ -262,8 +268,18 @@ export interface ScreenRecordingFile {
   duration: number;
   /** Whether microphone audio was recorded */
   enabledMicrophone: boolean;
-  /** Optional separate audio file (when separateAudioFile option is enabled) */
+  /**
+   * Optional separate microphone audio file (when separateAudioFile option is enabled).
+   * Contains only the microphone audio track.
+   */
   audioFile?: AudioRecordingFile;
+  /**
+   * Optional separate app/system audio file (when separateAudioFile option is enabled).
+   * Contains only the app/system audio track.
+   * Note: Only available on iOS. On Android, app audio capture requires Android 10+
+   * and is not currently supported.
+   */
+  appAudioFile?: AudioRecordingFile;
 }
 
 /**

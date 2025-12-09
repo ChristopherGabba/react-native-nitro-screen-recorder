@@ -46,13 +46,16 @@ namespace margelo::nitro::nitroscreenrecorder {
       jboolean enabledMicrophone = this->getFieldValue(fieldEnabledMicrophone);
       static const auto fieldAudioFile = clazz->getField<JAudioRecordingFile>("audioFile");
       jni::local_ref<JAudioRecordingFile> audioFile = this->getFieldValue(fieldAudioFile);
+      static const auto fieldAppAudioFile = clazz->getField<JAudioRecordingFile>("appAudioFile");
+      jni::local_ref<JAudioRecordingFile> appAudioFile = this->getFieldValue(fieldAppAudioFile);
       return ScreenRecordingFile(
         path->toStdString(),
         name->toStdString(),
         size,
         duration,
         static_cast<bool>(enabledMicrophone),
-        audioFile != nullptr ? std::make_optional(audioFile->toCpp()) : std::nullopt
+        audioFile != nullptr ? std::make_optional(audioFile->toCpp()) : std::nullopt,
+        appAudioFile != nullptr ? std::make_optional(appAudioFile->toCpp()) : std::nullopt
       );
     }
 
@@ -62,7 +65,7 @@ namespace margelo::nitro::nitroscreenrecorder {
      */
     [[maybe_unused]]
     static jni::local_ref<JScreenRecordingFile::javaobject> fromCpp(const ScreenRecordingFile& value) {
-      using JSignature = JScreenRecordingFile(jni::alias_ref<jni::JString>, jni::alias_ref<jni::JString>, double, double, jboolean, jni::alias_ref<JAudioRecordingFile>);
+      using JSignature = JScreenRecordingFile(jni::alias_ref<jni::JString>, jni::alias_ref<jni::JString>, double, double, jboolean, jni::alias_ref<JAudioRecordingFile>, jni::alias_ref<JAudioRecordingFile>);
       static const auto clazz = javaClassStatic();
       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
       return create(
@@ -72,7 +75,8 @@ namespace margelo::nitro::nitroscreenrecorder {
         value.size,
         value.duration,
         value.enabledMicrophone,
-        value.audioFile.has_value() ? JAudioRecordingFile::fromCpp(value.audioFile.value()) : nullptr
+        value.audioFile.has_value() ? JAudioRecordingFile::fromCpp(value.audioFile.value()) : nullptr,
+        value.appAudioFile.has_value() ? JAudioRecordingFile::fromCpp(value.appAudioFile.value()) : nullptr
       );
     }
   };

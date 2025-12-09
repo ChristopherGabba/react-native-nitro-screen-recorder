@@ -387,7 +387,8 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
           size = file.length().toDouble(),
           duration = RecorderUtils.getVideoDuration(file),
           enabledMicrophone = true, // Assume true for global recordings
-          audioFile = audioFile
+          audioFile = audioFile,
+          appAudioFile = null  // App audio capture not supported on Android
         )
       } else {
         null

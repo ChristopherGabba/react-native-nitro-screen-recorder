@@ -34,7 +34,10 @@ data class ScreenRecordingFile(
   val enabledMicrophone: Boolean,
   @DoNotStrip
   @Keep
-  val audioFile: AudioRecordingFile?
+  val audioFile: AudioRecordingFile?,
+  @DoNotStrip
+  @Keep
+  val appAudioFile: AudioRecordingFile?
 ) {
   /* primary constructor */
 
@@ -46,8 +49,8 @@ data class ScreenRecordingFile(
     @Keep
     @Suppress("unused")
     @JvmStatic
-    private fun fromCpp(path: String, name: String, size: Double, duration: Double, enabledMicrophone: Boolean, audioFile: AudioRecordingFile?): ScreenRecordingFile {
-      return ScreenRecordingFile(path, name, size, duration, enabledMicrophone, audioFile)
+    private fun fromCpp(path: String, name: String, size: Double, duration: Double, enabledMicrophone: Boolean, audioFile: AudioRecordingFile?, appAudioFile: AudioRecordingFile?): ScreenRecordingFile {
+      return ScreenRecordingFile(path, name, size, duration, enabledMicrophone, audioFile, appAudioFile)
     }
   }
 }

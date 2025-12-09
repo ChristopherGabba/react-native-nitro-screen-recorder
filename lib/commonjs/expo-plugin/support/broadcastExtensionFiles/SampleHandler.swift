@@ -1,7 +1,7 @@
 import AVFoundation
+import Darwin
 import ReplayKit
 import UserNotifications
-import Darwin
 
 @_silgen_name("finishBroadcastGracefully")
 func finishBroadcastGracefully(_ handler: RPBroadcastSampleHandler)
@@ -16,14 +16,16 @@ final class SampleHandler: RPBroadcastSampleHandler {
   // MARK: – Properties
 
   private func appGroupIDFromPlist() -> String? {
-    guard let value = Bundle.main.object(forInfoDictionaryKey: "BroadcastExtensionAppGroupIdentifier") as? String,
+    guard
+      let value = Bundle.main.object(forInfoDictionaryKey: "BroadcastExtensionAppGroupIdentifier")
+        as? String,
       !value.isEmpty
     else {
       return nil
     }
     return value
   }
-  
+
   // Store both the CFString and CFNotificationName versions
   private static let stopNotificationString = "com.nitroscreenrecorder.stopBroadcast" as CFString
   private static let stopNotificationName = CFNotificationName(stopNotificationString)
@@ -35,7 +37,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
   private var writer: BroadcastWriter?
   private let fileManager: FileManager = .default
   private let nodeURL: URL
-  private let audioNodeURL: URL
+  private let audioNodeURL: URL  // Mic audio
+  private let appAudioNodeURL: URL  // App/system audio
   private var sawMicBuffers = false
   private var separateAudioFile: Bool = false
 
@@ -45,16 +48,21 @@ final class SampleHandler: RPBroadcastSampleHandler {
     nodeURL = fileManager.temporaryDirectory
       .appendingPathComponent(uuid)
       .appendingPathExtension(for: .mpeg4Movie)
-    
+
     audioNodeURL = fileManager.temporaryDirectory
-      .appendingPathComponent("\(uuid)_audio")
+      .appendingPathComponent("\(uuid)_mic_audio")
+      .appendingPathExtension("m4a")
+
+    appAudioNodeURL = fileManager.temporaryDirectory
+      .appendingPathComponent("\(uuid)_app_audio")
       .appendingPathExtension("m4a")
 
     fileManager.removeFileIfExists(url: nodeURL)
     fileManager.removeFileIfExists(url: audioNodeURL)
+    fileManager.removeFileIfExists(url: appAudioNodeURL)
     super.init()
   }
-  
+
   deinit {
     CFNotificationCenterRemoveObserver(
       CFNotificationCenterGetDarwinNotifyCenter(),
@@ -63,7 +71,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
       nil
     )
   }
-  
+
   private func startListeningForStopSignal() {
     let center = CFNotificationCenterGetDarwinNotifyCenter()
 
@@ -95,7 +103,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     guard let groupID = hostAppGroupIdentifier else {
       finishBroadcastWithError(
         NSError(
-          domain: "SampleHandler", 
+          domain: "SampleHandler",
           code: 1,
           userInfo: [NSLocalizedDescriptionKey: "Missing app group identifier"]
         )
@@ -117,6 +125,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
       writer = try .init(
         outputURL: nodeURL,
         audioOutputURL: separateAudioFile ? audioNodeURL : nil,
+        appAudioOutputURL: separateAudioFile ? appAudioNodeURL : nil,
         screenSize: screen.bounds.size,
         screenScale: screen.scale,
         separateAudioFile: separateAudioFile
@@ -128,15 +137,20 @@ final class SampleHandler: RPBroadcastSampleHandler {
   }
 
   private func cleanupOldRecordings(in groupID: String) {
-    guard let docs = fileManager.containerURL(
-      forSecurityApplicationGroupIdentifier: groupID)?
-      .appendingPathComponent("Library/Documents/", isDirectory: true)
+    guard
+      let docs = fileManager.containerURL(
+        forSecurityApplicationGroupIdentifier: groupID)?
+        .appendingPathComponent("Library/Documents/", isDirectory: true)
     else { return }
 
     do {
       let items = try fileManager.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil)
-      for url in items where url.pathExtension.lowercased() == "mp4" {
-        try? fileManager.removeItem(at: url)
+      for url in items {
+        let ext = url.pathExtension.lowercased()
+        // Clean up video and audio files from previous recordings
+        if ext == "mp4" || ext == "m4a" {
+          try? fileManager.removeItem(at: url)
+        }
       }
     } catch {
       // Non-critical error, continue with broadcast
@@ -149,8 +163,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
   ) {
     guard let writer else { return }
 
-    if sampleBufferType == .audioMic { 
-      sawMicBuffers = true 
+    if sampleBufferType == .audioMic {
+      sawMicBuffers = true
     }
 
     do {
@@ -160,18 +174,18 @@ final class SampleHandler: RPBroadcastSampleHandler {
     }
   }
 
-  override func broadcastPaused() { 
-    writer?.pause() 
+  override func broadcastPaused() {
+    writer?.pause()
   }
-  
-  override func broadcastResumed() { 
-    writer?.resume() 
+
+  override func broadcastResumed() {
+    writer?.resume()
   }
 
   private func stopBroadcastGracefully() {
     finishBroadcastGracefully(self)
   }
-  
+
   override func broadcastFinished() {
     guard let writer else { return }
 
@@ -188,9 +202,11 @@ final class SampleHandler: RPBroadcastSampleHandler {
     guard let groupID = hostAppGroupIdentifier else { return }
 
     // Get container directory
-    guard let containerURL = fileManager
-      .containerURL(forSecurityApplicationGroupIdentifier: groupID)?
-      .appendingPathComponent("Library/Documents/", isDirectory: true)
+    guard
+      let containerURL =
+        fileManager
+        .containerURL(forSecurityApplicationGroupIdentifier: groupID)?
+        .appendingPathComponent("Library/Documents/", isDirectory: true)
     else { return }
 
     // Create directory if needed
@@ -208,23 +224,41 @@ final class SampleHandler: RPBroadcastSampleHandler {
       // File move failed, but we can't error out at this point
       return
     }
-    
-    // Move audio file to shared container if it exists
+
+    // Move mic audio file to shared container if it exists
     if let audioURL = result.audioURL {
       let audioDestination = containerURL.appendingPathComponent(audioURL.lastPathComponent)
       do {
         try fileManager.moveItem(at: audioURL, to: audioDestination)
-        // Store audio file name for retrieval
+        // Store mic audio file name for retrieval
         UserDefaults(suiteName: groupID)?
           .set(audioDestination.lastPathComponent, forKey: "LastBroadcastAudioFileName")
       } catch {
         // Audio file move failed, but video is already saved
-        debugPrint("Failed to move audio file: \(error)")
+        debugPrint("Failed to move mic audio file: \(error)")
       }
     } else {
-      // Clear audio file name if no separate audio
+      // Clear mic audio file name if no separate audio
       UserDefaults(suiteName: groupID)?
         .removeObject(forKey: "LastBroadcastAudioFileName")
+    }
+
+    // Move app audio file to shared container if it exists
+    if let appAudioURL = result.appAudioURL {
+      let appAudioDestination = containerURL.appendingPathComponent(appAudioURL.lastPathComponent)
+      do {
+        try fileManager.moveItem(at: appAudioURL, to: appAudioDestination)
+        // Store app audio file name for retrieval
+        UserDefaults(suiteName: groupID)?
+          .set(appAudioDestination.lastPathComponent, forKey: "LastBroadcastAppAudioFileName")
+      } catch {
+        // App audio file move failed, but video is already saved
+        debugPrint("Failed to move app audio file: \(error)")
+      }
+    } else {
+      // Clear app audio file name if no separate audio
+      UserDefaults(suiteName: groupID)?
+        .removeObject(forKey: "LastBroadcastAppAudioFileName")
     }
 
     // Persist microphone state and audio file state

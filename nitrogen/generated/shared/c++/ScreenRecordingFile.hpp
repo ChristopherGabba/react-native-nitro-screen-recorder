@@ -43,10 +43,11 @@ namespace margelo::nitro::nitroscreenrecorder {
     double duration     SWIFT_PRIVATE;
     bool enabledMicrophone     SWIFT_PRIVATE;
     std::optional<AudioRecordingFile> audioFile     SWIFT_PRIVATE;
+    std::optional<AudioRecordingFile> appAudioFile     SWIFT_PRIVATE;
 
   public:
     ScreenRecordingFile() = default;
-    explicit ScreenRecordingFile(std::string path, std::string name, double size, double duration, bool enabledMicrophone, std::optional<AudioRecordingFile> audioFile): path(path), name(name), size(size), duration(duration), enabledMicrophone(enabledMicrophone), audioFile(audioFile) {}
+    explicit ScreenRecordingFile(std::string path, std::string name, double size, double duration, bool enabledMicrophone, std::optional<AudioRecordingFile> audioFile, std::optional<AudioRecordingFile> appAudioFile): path(path), name(name), size(size), duration(duration), enabledMicrophone(enabledMicrophone), audioFile(audioFile), appAudioFile(appAudioFile) {}
   };
 
 } // namespace margelo::nitro::nitroscreenrecorder
@@ -64,7 +65,8 @@ namespace margelo::nitro {
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, "size")),
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, "duration")),
         JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, "enabledMicrophone")),
-        JSIConverter<std::optional<margelo::nitro::nitroscreenrecorder::AudioRecordingFile>>::fromJSI(runtime, obj.getProperty(runtime, "audioFile"))
+        JSIConverter<std::optional<margelo::nitro::nitroscreenrecorder::AudioRecordingFile>>::fromJSI(runtime, obj.getProperty(runtime, "audioFile")),
+        JSIConverter<std::optional<margelo::nitro::nitroscreenrecorder::AudioRecordingFile>>::fromJSI(runtime, obj.getProperty(runtime, "appAudioFile"))
       );
     }
     static inline jsi::Value toJSI(jsi::Runtime& runtime, const margelo::nitro::nitroscreenrecorder::ScreenRecordingFile& arg) {
@@ -75,6 +77,7 @@ namespace margelo::nitro {
       obj.setProperty(runtime, "duration", JSIConverter<double>::toJSI(runtime, arg.duration));
       obj.setProperty(runtime, "enabledMicrophone", JSIConverter<bool>::toJSI(runtime, arg.enabledMicrophone));
       obj.setProperty(runtime, "audioFile", JSIConverter<std::optional<margelo::nitro::nitroscreenrecorder::AudioRecordingFile>>::toJSI(runtime, arg.audioFile));
+      obj.setProperty(runtime, "appAudioFile", JSIConverter<std::optional<margelo::nitro::nitroscreenrecorder::AudioRecordingFile>>::toJSI(runtime, arg.appAudioFile));
       return obj;
     }
     static inline bool canConvert(jsi::Runtime& runtime, const jsi::Value& value) {
@@ -91,6 +94,7 @@ namespace margelo::nitro {
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, "duration"))) return false;
       if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, "enabledMicrophone"))) return false;
       if (!JSIConverter<std::optional<margelo::nitro::nitroscreenrecorder::AudioRecordingFile>>::canConvert(runtime, obj.getProperty(runtime, "audioFile"))) return false;
+      if (!JSIConverter<std::optional<margelo::nitro::nitroscreenrecorder::AudioRecordingFile>>::canConvert(runtime, obj.getProperty(runtime, "appAudioFile"))) return false;
       return true;
     }
   };
