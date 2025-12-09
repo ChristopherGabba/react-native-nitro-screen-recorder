@@ -17,6 +17,15 @@ export const withMainAppEntitlementsFile: ConfigPlugin<ConfigProps> = (
 
     // Check if the entitlements file is already added to the project
     const files = xcodeProject.hash.project.objects.PBXFileReference;
+
+    // Safety check: ensure files object exists
+    if (!files) {
+      ScreenRecorderLog.log(
+        'PBXFileReference not found in project. Skipping entitlements file addition.'
+      );
+      return newConfig;
+    }
+
     const entitlementsFileExists = Object.values(files).some(
       (file: any) => file && file.path === `"${entitlementsFileName}"`
     );
@@ -64,15 +73,19 @@ export const withMainAppEntitlementsFile: ConfigPlugin<ConfigProps> = (
     }
 
     // If still not found, try to find the group that contains AppDelegate or main source files
-    if (!mainAppGroupKey) {
+    if (!mainAppGroupKey && files) {
       ScreenRecorderLog.log(
         'Trying to find main app group by looking for AppDelegate...'
       );
       for (const key in groups) {
         const group = groups[key];
-        if (group && group.children) {
+        if (group && group.children && Array.isArray(group.children)) {
           // Check if this group contains typical main app files
           const hasMainAppFiles = group.children.some((childKey: string) => {
+            // Safety check: ensure childKey is a valid string
+            if (!childKey || typeof childKey !== 'string') {
+              return false;
+            }
             const file = files[childKey];
             return (
               file &&
