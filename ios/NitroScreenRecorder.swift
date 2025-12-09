@@ -423,7 +423,8 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
               size: attrs[.size] as? Double ?? 0,
               duration: duration,
               enabledMicrophone: self.recorder.isMicrophoneEnabled,
-              audioFile: audioFile
+              audioFile: audioFile,
+              appAudioFile: nil  // In-app recording doesn't capture app audio separately
             )
 
             print("✅ Recording finished and saved to:", outputURL.path)
