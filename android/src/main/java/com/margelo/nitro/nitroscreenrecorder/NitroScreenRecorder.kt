@@ -338,16 +338,19 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
           putExtra(ScreenRecordingService.EXTRA_SEPARATE_AUDIO, separateAudioFile)
         }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-          ctx.startForegroundService(startIntent)
-        } else {
-          ctx.startService(startIntent)
-        }
-
         // Wait for recording to start (or timeout)
+        // IMPORTANT: Set up continuation BEFORE starting the service to avoid race condition
         kotlinx.coroutines.withTimeoutOrNull(timeoutMs.toLong()) {
           suspendCancellableCoroutine<Boolean?> { cont ->
+            // Set up continuation first
             globalRecordingStartContinuation = cont
+
+            // NOW start the service (after continuation is ready)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+              ctx.startForegroundService(startIntent)
+            } else {
+              ctx.startService(startIntent)
+            }
           }
         }
       } catch (e: Exception) {

@@ -174,6 +174,9 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
         isGlobalRecordingActive = true
 
         // Resolve the promise if we were waiting for global recording to start
+        print(
+          "🎬 Global recording detected - initiated by us: \(globalRecordingInitiatedByThisPackage), continuation exists: \(globalRecordingContinuation != nil)"
+        )
         if globalRecordingInitiatedByThisPackage {
           isBroadcastModalShowing = false  // Modal is gone once recording starts
           resolveGlobalRecordingPromise(with: true)
@@ -563,12 +566,18 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
 
   /// Helper to resolve the global recording promise and clean up
   private func resolveGlobalRecordingPromise(with result: Bool?) {
+    print(
+      "🔄 resolveGlobalRecordingPromise called with: \(String(describing: result)), continuation exists: \(globalRecordingContinuation != nil)"
+    )
     globalRecordingTimeoutTask?.cancel()
     globalRecordingTimeoutTask = nil
 
     if let continuation = globalRecordingContinuation {
       globalRecordingContinuation = nil
+      print("✅ Resuming continuation with: \(String(describing: result))")
       continuation.resume(returning: result)
+    } else {
+      print("⚠️ No continuation to resume!")
     }
   }
 
@@ -612,31 +621,42 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     // Mark that we initiated this recording
     globalRecordingInitiatedByThisPackage = true
 
-    // Present the broadcast picker
-    presentGlobalBroadcastModal(enableMicrophone: enableMic)
+    // Capture enableMic for use in async context
+    let enableMicCapture = enableMic
+    let timeoutMsCapture = timeoutMs
 
     return Promise.async { [weak self] in
       guard let self = self else { return nil }
 
       return await withCheckedContinuation { continuation in
-        self.globalRecordingContinuation = continuation
+        // Dispatch to main thread to ensure thread safety with handleScreenRecordingChange
+        // and to properly present the modal
+        DispatchQueue.main.async {
+          // IMPORTANT: Set up continuation FIRST, before presenting the modal
+          // This prevents race condition where recording starts before continuation is ready
+          print("📝 Setting up globalRecordingContinuation on main thread")
+          self.globalRecordingContinuation = continuation
 
-        // Set up timeout
-        self.globalRecordingTimeoutTask = Task {
-          do {
-            try await Task.sleep(nanoseconds: UInt64(timeoutMs * 1_000_000))
-            // If we get here, timeout occurred
-            await MainActor.run {
-              if self.globalRecordingContinuation != nil {
-                print("⏱️ Global recording start timed out after \(timeoutMs)ms")
-                self.isBroadcastModalShowing = false
-                self.globalRecordingInitiatedByThisPackage = false
-                self.resolveGlobalRecordingPromise(with: nil)
+          // Set up timeout
+          self.globalRecordingTimeoutTask = Task {
+            do {
+              try await Task.sleep(nanoseconds: UInt64(timeoutMsCapture * 1_000_000))
+              // If we get here, timeout occurred
+              await MainActor.run {
+                if self.globalRecordingContinuation != nil {
+                  print("⏱️ Global recording start timed out after \(timeoutMsCapture)ms")
+                  self.isBroadcastModalShowing = false
+                  self.globalRecordingInitiatedByThisPackage = false
+                  self.resolveGlobalRecordingPromise(with: nil)
+                }
               }
+            } catch {
+              // Task was cancelled, which is expected when recording starts or modal dismissed
             }
-          } catch {
-            // Task was cancelled, which is expected when recording starts or modal dismissed
           }
+
+          // NOW present the broadcast picker (after continuation is set up)
+          self.presentGlobalBroadcastModal(enableMicrophone: enableMicCapture)
         }
       }
     }
