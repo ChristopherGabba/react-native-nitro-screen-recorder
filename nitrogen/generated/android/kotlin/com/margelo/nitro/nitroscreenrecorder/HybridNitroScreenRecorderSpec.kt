@@ -105,14 +105,9 @@ abstract class HybridNitroScreenRecorderSpec: HybridObject() {
   @Keep
   abstract fun cancelInAppRecording(): Promise<Unit>
   
-  abstract fun startGlobalRecording(enableMic: Boolean, separateAudioFile: Boolean, onRecordingError: (error: RecordingError) -> Unit): Unit
-  
   @DoNotStrip
   @Keep
-  private fun startGlobalRecording_cxx(enableMic: Boolean, separateAudioFile: Boolean, onRecordingError: Func_void_RecordingError): Unit {
-    val __result = startGlobalRecording(enableMic, separateAudioFile, onRecordingError)
-    return __result
-  }
+  abstract fun startGlobalRecording(enableMic: Boolean, separateAudioFile: Boolean, timeoutMs: Double): Promise<Boolean?>
   
   @DoNotStrip
   @Keep

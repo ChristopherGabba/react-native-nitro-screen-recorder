@@ -19,7 +19,6 @@
 #include "JFunc_void_ScreenRecordingEvent.hpp"
 #include "JFunc_void_BroadcastPickerPresentationEvent.hpp"
 #include "JFunc_void_ScreenRecordingFile.hpp"
-#include "JFunc_void_RecordingError.hpp"
 #include <NitroModules/DefaultConstructableObject.hpp>
 
 namespace margelo::nitro::nitroscreenrecorder {
@@ -35,7 +34,6 @@ int initialize(JavaVM* vm) {
     margelo::nitro::nitroscreenrecorder::JFunc_void_ScreenRecordingEvent_cxx::registerNatives();
     margelo::nitro::nitroscreenrecorder::JFunc_void_BroadcastPickerPresentationEvent_cxx::registerNatives();
     margelo::nitro::nitroscreenrecorder::JFunc_void_ScreenRecordingFile_cxx::registerNatives();
-    margelo::nitro::nitroscreenrecorder::JFunc_void_RecordingError_cxx::registerNatives();
 
     // Register Nitro Hybrid Objects
     HybridObjectRegistry::registerHybridObjectConstructor(

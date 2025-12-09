@@ -18,8 +18,6 @@ namespace margelo::nitro::nitroscreenrecorder { class HybridNitroScreenRecorderS
 namespace margelo::nitro::nitroscreenrecorder { struct PermissionResponse; }
 // Forward declaration of `PermissionStatus` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { enum class PermissionStatus; }
-// Forward declaration of `RecordingError` to properly resolve imports.
-namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 // Forward declaration of `RecordingEventReason` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { enum class RecordingEventReason; }
 // Forward declaration of `RecordingEventType` to properly resolve imports.
@@ -39,7 +37,6 @@ namespace NitroScreenRecorder { class HybridNitroScreenRecorderSpec_cxx; }
 #include "HybridNitroScreenRecorderSpec.hpp"
 #include "PermissionResponse.hpp"
 #include "PermissionStatus.hpp"
-#include "RecordingError.hpp"
 #include "RecordingEventReason.hpp"
 #include "RecordingEventType.hpp"
 #include "ScreenRecordingEvent.hpp"
@@ -294,26 +291,53 @@ namespace margelo::nitro::nitroscreenrecorder::bridge::swift {
     return Func_void_Wrapper(std::move(value));
   }
   
-  // pragma MARK: std::function<void(const RecordingError& /* error */)>
+  // pragma MARK: std::optional<bool>
   /**
-   * Specialized version of `std::function<void(const RecordingError&)>`.
+   * Specialized version of `std::optional<bool>`.
    */
-  using Func_void_RecordingError = std::function<void(const RecordingError& /* error */)>;
+  using std__optional_bool_ = std::optional<bool>;
+  inline std::optional<bool> create_std__optional_bool_(const bool& value) noexcept {
+    return std::optional<bool>(value);
+  }
+  inline bool has_value_std__optional_bool_(const std::optional<bool>& optional) noexcept {
+    return optional.has_value();
+  }
+  inline bool get_std__optional_bool_(const std::optional<bool>& optional) noexcept {
+    return *optional;
+  }
+  
+  // pragma MARK: std::shared_ptr<Promise<std::optional<bool>>>
   /**
-   * Wrapper class for a `std::function<void(const RecordingError& / * error * /)>`, this can be used from Swift.
+   * Specialized version of `std::shared_ptr<Promise<std::optional<bool>>>`.
    */
-  class Func_void_RecordingError_Wrapper final {
+  using std__shared_ptr_Promise_std__optional_bool___ = std::shared_ptr<Promise<std::optional<bool>>>;
+  inline std::shared_ptr<Promise<std::optional<bool>>> create_std__shared_ptr_Promise_std__optional_bool___() noexcept {
+    return Promise<std::optional<bool>>::create();
+  }
+  inline PromiseHolder<std::optional<bool>> wrap_std__shared_ptr_Promise_std__optional_bool___(std::shared_ptr<Promise<std::optional<bool>>> promise) noexcept {
+    return PromiseHolder<std::optional<bool>>(std::move(promise));
+  }
+  
+  // pragma MARK: std::function<void(std::optional<bool> /* result */)>
+  /**
+   * Specialized version of `std::function<void(std::optional<bool>)>`.
+   */
+  using Func_void_std__optional_bool_ = std::function<void(std::optional<bool> /* result */)>;
+  /**
+   * Wrapper class for a `std::function<void(std::optional<bool> / * result * /)>`, this can be used from Swift.
+   */
+  class Func_void_std__optional_bool__Wrapper final {
   public:
-    explicit Func_void_RecordingError_Wrapper(std::function<void(const RecordingError& /* error */)>&& func): _function(std::make_unique<std::function<void(const RecordingError& /* error */)>>(std::move(func))) {}
-    inline void call(RecordingError error) const noexcept {
-      _function->operator()(error);
+    explicit Func_void_std__optional_bool__Wrapper(std::function<void(std::optional<bool> /* result */)>&& func): _function(std::make_unique<std::function<void(std::optional<bool> /* result */)>>(std::move(func))) {}
+    inline void call(std::optional<bool> result) const noexcept {
+      _function->operator()(result);
     }
   private:
-    std::unique_ptr<std::function<void(const RecordingError& /* error */)>> _function;
+    std::unique_ptr<std::function<void(std::optional<bool> /* result */)>> _function;
   } SWIFT_NONCOPYABLE;
-  Func_void_RecordingError create_Func_void_RecordingError(void* NON_NULL swiftClosureWrapper) noexcept;
-  inline Func_void_RecordingError_Wrapper wrap_Func_void_RecordingError(Func_void_RecordingError value) noexcept {
-    return Func_void_RecordingError_Wrapper(std::move(value));
+  Func_void_std__optional_bool_ create_Func_void_std__optional_bool_(void* NON_NULL swiftClosureWrapper) noexcept;
+  inline Func_void_std__optional_bool__Wrapper wrap_Func_void_std__optional_bool_(Func_void_std__optional_bool_ value) noexcept {
+    return Func_void_std__optional_bool__Wrapper(std::move(value));
   }
   
   // pragma MARK: std::shared_ptr<HybridNitroScreenRecorderSpec>
@@ -380,6 +404,15 @@ namespace margelo::nitro::nitroscreenrecorder::bridge::swift {
   }
   inline Result_std__shared_ptr_Promise_void___ create_Result_std__shared_ptr_Promise_void___(const std::exception_ptr& error) noexcept {
     return Result<std::shared_ptr<Promise<void>>>::withError(error);
+  }
+  
+  // pragma MARK: Result<std::shared_ptr<Promise<std::optional<bool>>>>
+  using Result_std__shared_ptr_Promise_std__optional_bool____ = Result<std::shared_ptr<Promise<std::optional<bool>>>>;
+  inline Result_std__shared_ptr_Promise_std__optional_bool____ create_Result_std__shared_ptr_Promise_std__optional_bool____(const std::shared_ptr<Promise<std::optional<bool>>>& value) noexcept {
+    return Result<std::shared_ptr<Promise<std::optional<bool>>>>::withValue(value);
+  }
+  inline Result_std__shared_ptr_Promise_std__optional_bool____ create_Result_std__shared_ptr_Promise_std__optional_bool____(const std::exception_ptr& error) noexcept {
+    return Result<std::shared_ptr<Promise<std::optional<bool>>>>::withError(error);
   }
   
   // pragma MARK: Result<std::optional<ScreenRecordingFile>>

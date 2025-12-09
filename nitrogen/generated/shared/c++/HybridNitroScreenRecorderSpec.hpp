@@ -27,8 +27,6 @@ namespace margelo::nitro::nitroscreenrecorder { struct RecorderCameraStyle; }
 namespace margelo::nitro::nitroscreenrecorder { enum class CameraDevice; }
 // Forward declaration of `ScreenRecordingFile` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingFile; }
-// Forward declaration of `RecordingError` to properly resolve imports.
-namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 
 #include "PermissionStatus.hpp"
 #include "PermissionResponse.hpp"
@@ -40,7 +38,6 @@ namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 #include "CameraDevice.hpp"
 #include "ScreenRecordingFile.hpp"
 #include <optional>
-#include "RecordingError.hpp"
 
 namespace margelo::nitro::nitroscreenrecorder {
 
@@ -84,7 +81,7 @@ namespace margelo::nitro::nitroscreenrecorder {
       virtual void startInAppRecording(bool enableMic, bool enableCamera, const RecorderCameraStyle& cameraPreviewStyle, CameraDevice cameraDevice, bool separateAudioFile, const std::function<void(const ScreenRecordingFile& /* file */)>& onRecordingFinished) = 0;
       virtual std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> stopInAppRecording() = 0;
       virtual std::shared_ptr<Promise<void>> cancelInAppRecording() = 0;
-      virtual void startGlobalRecording(bool enableMic, bool separateAudioFile, const std::function<void(const RecordingError& /* error */)>& onRecordingError) = 0;
+      virtual std::shared_ptr<Promise<std::optional<bool>>> startGlobalRecording(bool enableMic, bool separateAudioFile, double timeoutMs) = 0;
       virtual std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> stopGlobalRecording(double settledTimeMs) = 0;
       virtual std::optional<ScreenRecordingFile> retrieveLastGlobalRecording() = 0;
       virtual void clearRecordingCache() = 0;
