@@ -26,7 +26,7 @@ public protocol HybridNitroScreenRecorderSpec_protocol: HybridObject {
   func startInAppRecording(enableMic: Bool, enableCamera: Bool, cameraPreviewStyle: RecorderCameraStyle, cameraDevice: CameraDevice, separateAudioFile: Bool, onRecordingFinished: @escaping (_ file: ScreenRecordingFile) -> Void) throws -> Void
   func stopInAppRecording() throws -> Promise<ScreenRecordingFile?>
   func cancelInAppRecording() throws -> Promise<Void>
-  func startGlobalRecording(enableMic: Bool, separateAudioFile: Bool, timeoutMs: Double) throws -> Promise<Bool?>
+  func startGlobalRecording(enableMic: Bool, separateAudioFile: Bool, onRecordingError: @escaping (_ error: RecordingError) -> Void) throws -> Void
   func stopGlobalRecording(settledTimeMs: Double) throws -> Promise<ScreenRecordingFile?>
   func retrieveLastGlobalRecording() throws -> ScreenRecordingFile?
   func clearRecordingCache() throws -> Void

@@ -6,6 +6,7 @@ import type {
   ScreenRecordingFile,
   ScreenRecordingEvent,
   PermissionStatus,
+  RecordingError,
   BroadcastPickerPresentationEvent,
 } from './types';
 
@@ -65,22 +66,11 @@ export interface NitroScreenRecorder
   // GLOBAL RECORDING
   // ============================================================================
 
-  /**
-   * Starts global screen recording (iOS: broadcast extension, Android: MediaProjection).
-   *
-   * @param enableMic - Whether to enable microphone recording
-   * @param separateAudioFile - Whether to save audio as a separate file
-   * @param timeoutMs - How long to wait for recording to start (default: 120000ms / 2 minutes)
-   * @returns Promise that resolves with:
-   *   - `true` if recording started successfully
-   *   - `undefined` if user dismissed/cancelled or timed out
-   * @throws Error if there's an actual failure (permissions, app group issues, etc.)
-   */
   startGlobalRecording(
     enableMic: boolean,
     separateAudioFile: boolean,
-    timeoutMs: number
-  ): Promise<boolean | undefined>;
+    onRecordingError: (error: RecordingError) => void
+  ): void;
   stopGlobalRecording(
     settledTimeMs: number
   ): Promise<ScreenRecordingFile | undefined>;

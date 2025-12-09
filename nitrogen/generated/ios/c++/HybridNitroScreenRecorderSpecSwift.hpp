@@ -32,6 +32,8 @@ namespace margelo::nitro::nitroscreenrecorder { enum class CameraDevice; }
 namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingFile; }
 // Forward declaration of `AudioRecordingFile` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct AudioRecordingFile; }
+// Forward declaration of `RecordingError` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 
 #include "PermissionStatus.hpp"
 #include "PermissionResponse.hpp"
@@ -47,6 +49,7 @@ namespace margelo::nitro::nitroscreenrecorder { struct AudioRecordingFile; }
 #include "ScreenRecordingFile.hpp"
 #include <string>
 #include "AudioRecordingFile.hpp"
+#include "RecordingError.hpp"
 
 #include "NitroScreenRecorder-Swift-Cxx-Umbrella.hpp"
 
@@ -174,13 +177,11 @@ namespace margelo::nitro::nitroscreenrecorder {
       auto __value = std::move(__result.value());
       return __value;
     }
-    inline std::shared_ptr<Promise<std::optional<bool>>> startGlobalRecording(bool enableMic, bool separateAudioFile, double timeoutMs) override {
-      auto __result = _swiftPart.startGlobalRecording(std::forward<decltype(enableMic)>(enableMic), std::forward<decltype(separateAudioFile)>(separateAudioFile), std::forward<decltype(timeoutMs)>(timeoutMs));
+    inline void startGlobalRecording(bool enableMic, bool separateAudioFile, const std::function<void(const RecordingError& /* error */)>& onRecordingError) override {
+      auto __result = _swiftPart.startGlobalRecording(std::forward<decltype(enableMic)>(enableMic), std::forward<decltype(separateAudioFile)>(separateAudioFile), onRecordingError);
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }
-      auto __value = std::move(__result.value());
-      return __value;
     }
     inline std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> stopGlobalRecording(double settledTimeMs) override {
       auto __result = _swiftPart.stopGlobalRecording(std::forward<decltype(settledTimeMs)>(settledTimeMs));

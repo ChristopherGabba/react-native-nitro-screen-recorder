@@ -22,6 +22,8 @@ namespace margelo::nitro::nitroscreenrecorder { struct PermissionResponse; }
 namespace margelo::nitro::nitroscreenrecorder { enum class PermissionStatus; }
 // Forward declaration of `RecorderCameraStyle` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct RecorderCameraStyle; }
+// Forward declaration of `RecordingError` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 // Forward declaration of `RecordingEventReason` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { enum class RecordingEventReason; }
 // Forward declaration of `RecordingEventType` to properly resolve imports.
@@ -39,6 +41,7 @@ namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingFile; }
 #include "PermissionResponse.hpp"
 #include "PermissionStatus.hpp"
 #include "RecorderCameraStyle.hpp"
+#include "RecordingError.hpp"
 #include "RecordingEventReason.hpp"
 #include "RecordingEventType.hpp"
 #include "ScreenRecordingEvent.hpp"

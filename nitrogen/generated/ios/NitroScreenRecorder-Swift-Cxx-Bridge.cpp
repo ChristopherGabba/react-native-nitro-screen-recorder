@@ -69,11 +69,11 @@ namespace margelo::nitro::nitroscreenrecorder::bridge::swift {
     };
   }
   
-  // pragma MARK: std::function<void(std::optional<bool> /* result */)>
-  Func_void_std__optional_bool_ create_Func_void_std__optional_bool_(void* NON_NULL swiftClosureWrapper) noexcept {
-    auto swiftClosure = NitroScreenRecorder::Func_void_std__optional_bool_::fromUnsafe(swiftClosureWrapper);
-    return [swiftClosure = std::move(swiftClosure)](std::optional<bool> result) mutable -> void {
-      swiftClosure.call(result);
+  // pragma MARK: std::function<void(const RecordingError& /* error */)>
+  Func_void_RecordingError create_Func_void_RecordingError(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = NitroScreenRecorder::Func_void_RecordingError::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](const RecordingError& error) mutable -> void {
+      swiftClosure.call(error);
     };
   }
   

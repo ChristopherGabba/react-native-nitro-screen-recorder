@@ -105,35 +105,16 @@ export declare function cancelInAppRecording(): Promise<void>;
 /**
  * Starts global screen recording that captures the entire device screen.
  * Records system-wide content, including other apps and system UI.
- *
- * On iOS, this presents the system broadcast picker modal. The promise resolves
- * when the user starts the broadcast, or with `undefined` if they dismiss the modal.
- *
- * On Android, this requests screen capture permission. The promise resolves
- * when recording starts, or with `undefined` if the user denies permission.
+ * Requires screen recording permission on iOS.
  *
  * @platform iOS, Android
- * @param input Configuration options for the recording session
- * @returns Promise that resolves with:
- *   - `true` if recording started successfully
- *   - `undefined` if user cancelled/dismissed or timed out
- * @throws Error if there's an actual failure (permissions on Android, app group issues on iOS, etc.)
  * @example
  * ```typescript
- * const started = await startGlobalRecording({
- *   options: { enableMic: true },
- *   timeoutMs: 60000 // 1 minute timeout
- * });
- *
- * if (started) {
- *   console.log('Recording started!');
- *   // User can now navigate to other apps while recording continues
- * } else {
- *   console.log('User cancelled or timed out');
- * }
+ * startGlobalRecording();
+ * // User can now navigate to other apps while recording continues
  * ```
  */
-export declare function startGlobalRecording(input?: GlobalRecordingInput): Promise<boolean | undefined>;
+export declare function startGlobalRecording(input: GlobalRecordingInput): void;
 /**
  * Stops the current global screen recording and saves the video.
  * The recorded file can be retrieved using retrieveLastGlobalRecording().

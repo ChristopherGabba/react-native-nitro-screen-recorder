@@ -297,27 +297,18 @@ open class HybridNitroScreenRecorderSpec_cxx {
   }
   
   @inline(__always)
-  public final func startGlobalRecording(enableMic: Bool, separateAudioFile: Bool, timeoutMs: Double) -> bridge.Result_std__shared_ptr_Promise_std__optional_bool____ {
+  public final func startGlobalRecording(enableMic: Bool, separateAudioFile: Bool, onRecordingError: bridge.Func_void_RecordingError) -> bridge.Result_void_ {
     do {
-      let __result = try self.__implementation.startGlobalRecording(enableMic: enableMic, separateAudioFile: separateAudioFile, timeoutMs: timeoutMs)
-      let __resultCpp = { () -> bridge.std__shared_ptr_Promise_std__optional_bool___ in
-        let __promise = bridge.create_std__shared_ptr_Promise_std__optional_bool___()
-        let __promiseHolder = bridge.wrap_std__shared_ptr_Promise_std__optional_bool___(__promise)
-        __result
-          .then({ __result in __promiseHolder.resolve({ () -> bridge.std__optional_bool_ in
-              if let __unwrappedValue = __result {
-                return bridge.create_std__optional_bool_(__unwrappedValue)
-              } else {
-                return .init()
-              }
-            }()) })
-          .catch({ __error in __promiseHolder.reject(__error.toCpp()) })
-        return __promise
-      }()
-      return bridge.create_Result_std__shared_ptr_Promise_std__optional_bool____(__resultCpp)
+      try self.__implementation.startGlobalRecording(enableMic: enableMic, separateAudioFile: separateAudioFile, onRecordingError: { () -> (RecordingError) -> Void in
+        let __wrappedFunction = bridge.wrap_Func_void_RecordingError(onRecordingError)
+        return { (__error: RecordingError) -> Void in
+          __wrappedFunction.call(__error)
+        }
+      }())
+      return bridge.create_Result_void_()
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()
-      return bridge.create_Result_std__shared_ptr_Promise_std__optional_bool____(__exceptionPtr)
+      return bridge.create_Result_void_(__exceptionPtr)
     }
   }
   

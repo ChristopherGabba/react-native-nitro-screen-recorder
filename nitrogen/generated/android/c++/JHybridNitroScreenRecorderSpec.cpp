@@ -27,6 +27,8 @@ namespace margelo::nitro::nitroscreenrecorder { enum class BroadcastPickerPresen
 namespace margelo::nitro::nitroscreenrecorder { struct RecorderCameraStyle; }
 // Forward declaration of `CameraDevice` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { enum class CameraDevice; }
+// Forward declaration of `RecordingError` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 
 #include "PermissionStatus.hpp"
 #include "JPermissionStatus.hpp"
@@ -56,6 +58,9 @@ namespace margelo::nitro::nitroscreenrecorder { enum class CameraDevice; }
 #include "CameraDevice.hpp"
 #include "JCameraDevice.hpp"
 #include "JFunc_void_ScreenRecordingFile.hpp"
+#include "RecordingError.hpp"
+#include "JFunc_void_RecordingError.hpp"
+#include "JRecordingError.hpp"
 
 namespace margelo::nitro::nitroscreenrecorder {
 
@@ -184,21 +189,9 @@ namespace margelo::nitro::nitroscreenrecorder {
       return __promise;
     }();
   }
-  std::shared_ptr<Promise<std::optional<bool>>> JHybridNitroScreenRecorderSpec::startGlobalRecording(bool enableMic, bool separateAudioFile, double timeoutMs) {
-    static const auto method = javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(jboolean /* enableMic */, jboolean /* separateAudioFile */, double /* timeoutMs */)>("startGlobalRecording");
-    auto __result = method(_javaPart, enableMic, separateAudioFile, timeoutMs);
-    return [&]() {
-      auto __promise = Promise<std::optional<bool>>::create();
-      __result->cthis()->addOnResolvedListener([=](const jni::alias_ref<jni::JObject>& __boxedResult) {
-        auto __result = jni::static_ref_cast<jni::JBoolean>(__boxedResult);
-        __promise->resolve(__result != nullptr ? std::make_optional(static_cast<bool>(__result->value())) : std::nullopt);
-      });
-      __result->cthis()->addOnRejectedListener([=](const jni::alias_ref<jni::JThrowable>& __throwable) {
-        jni::JniException __jniError(__throwable);
-        __promise->reject(std::make_exception_ptr(__jniError));
-      });
-      return __promise;
-    }();
+  void JHybridNitroScreenRecorderSpec::startGlobalRecording(bool enableMic, bool separateAudioFile, const std::function<void(const RecordingError& /* error */)>& onRecordingError) {
+    static const auto method = javaClassStatic()->getMethod<void(jboolean /* enableMic */, jboolean /* separateAudioFile */, jni::alias_ref<JFunc_void_RecordingError::javaobject> /* onRecordingError */)>("startGlobalRecording_cxx");
+    method(_javaPart, enableMic, separateAudioFile, JFunc_void_RecordingError_cxx::fromCpp(onRecordingError));
   }
   std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> JHybridNitroScreenRecorderSpec::stopGlobalRecording(double settledTimeMs) {
     static const auto method = javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(double /* settledTimeMs */)>("stopGlobalRecording");
