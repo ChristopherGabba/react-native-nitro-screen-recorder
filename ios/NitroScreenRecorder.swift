@@ -43,6 +43,10 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
   private var isBroadcastModalShowing: Bool = false
   private var appStateObservers: [NSObjectProtocol] = []
 
+  // Promise continuation for startGlobalRecording
+  private var globalRecordingContinuation: CheckedContinuation<Bool?, Never>?
+  private var globalRecordingTimeoutTask: Task<Void, Never>?
+
   override init() {
     super.init()
     registerListener()
@@ -150,6 +154,11 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
 
     // Notify all listeners that the modal was dismissed
     broadcastPickerEventListeners.forEach { $0.callback(.dismissed) }
+
+    // If we have a pending continuation and recording didn't start, resolve with nil (user cancelled)
+    if !UIScreen.main.isCaptured {
+      resolveGlobalRecordingPromise(with: nil)
+    }
   }
 
   @objc private func handleScreenRecordingChange() {
@@ -163,6 +172,12 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
       } else {
         type = .global
         isGlobalRecordingActive = true
+
+        // Resolve the promise if we were waiting for global recording to start
+        if globalRecordingInitiatedByThisPackage {
+          isBroadcastModalShowing = false  // Modal is gone once recording starts
+          resolveGlobalRecordingPromise(with: true)
+        }
       }
     } else {
       reason = .ended
@@ -546,55 +561,85 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     }
   }
 
+  /// Helper to resolve the global recording promise and clean up
+  private func resolveGlobalRecordingPromise(with result: Bool?) {
+    globalRecordingTimeoutTask?.cancel()
+    globalRecordingTimeoutTask = nil
+
+    if let continuation = globalRecordingContinuation {
+      globalRecordingContinuation = nil
+      continuation.resume(returning: result)
+    }
+  }
+
   func startGlobalRecording(
-    enableMic: Bool, separateAudioFile: Bool, onRecordingError: @escaping (RecordingError) -> Void
-  )
-    throws
-  {
+    enableMic: Bool, separateAudioFile: Bool, timeoutMs: Double
+  ) throws -> Promise<Bool?> {
+    // Validate not already recording
     guard !isGlobalRecordingActive else {
-      print("⚠️ Attempted to start a global recording, but one is already active.")
-      let error = RecordingError(
+      throw RecorderError.error(
         name: "BROADCAST_ALREADY_ACTIVE",
         message: "A screen recording session is already in progress."
       )
-      onRecordingError(error)
-      return
     }
+
+    // Cancel any existing pending promise
+    resolveGlobalRecordingPromise(with: nil)
 
     // Validate that we can access the app group (needed for global recordings)
     guard let appGroupId = try? getAppGroupIdentifier() else {
-      let error = RecordingError(
+      throw RecorderError.error(
         name: "APP_GROUP_ACCESS_FAILED",
         message:
           "Could not access app group identifier required for global recording. Something is wrong with your entitlements."
       )
-      onRecordingError(error)
-      return
     }
     guard
       FileManager.default
         .containerURL(forSecurityApplicationGroupIdentifier: appGroupId) != nil
     else {
-      let error = RecordingError(
+      throw RecorderError.error(
         name: "APP_GROUP_CONTAINER_FAILED",
         message:
           "Could not access app group container required for global recording. Something is wrong with your entitlements."
       )
-      onRecordingError(error)
-      return
     }
 
     // Store the separateAudioFile preference for the broadcast extension to read
     self.separateAudioFileEnabled = separateAudioFile
     UserDefaults(suiteName: appGroupId)?.set(separateAudioFile, forKey: "SeparateAudioFileEnabled")
 
+    // Mark that we initiated this recording
+    globalRecordingInitiatedByThisPackage = true
+
     // Present the broadcast picker
     presentGlobalBroadcastModal(enableMicrophone: enableMic)
 
-    // This is sort of a hack to try and track if the user opened the broadcast modal first
-    // may not be that reliable, because technically they can open this modal and close it without starting a broadcast
-    globalRecordingInitiatedByThisPackage = true
+    return Promise.async { [weak self] in
+      guard let self = self else { return nil }
 
+      return await withCheckedContinuation { continuation in
+        self.globalRecordingContinuation = continuation
+
+        // Set up timeout
+        self.globalRecordingTimeoutTask = Task {
+          do {
+            try await Task.sleep(nanoseconds: UInt64(timeoutMs * 1_000_000))
+            // If we get here, timeout occurred
+            await MainActor.run {
+              if self.globalRecordingContinuation != nil {
+                print("⏱️ Global recording start timed out after \(timeoutMs)ms")
+                self.isBroadcastModalShowing = false
+                self.globalRecordingInitiatedByThisPackage = false
+                self.resolveGlobalRecordingPromise(with: nil)
+              }
+            }
+          } catch {
+            // Task was cancelled, which is expected when recording starts or modal dismissed
+          }
+        }
+      }
+    }
   }
   // This is a hack I learned through:
   // https://mehmetbaykar.com/posts/how-to-gracefully-stop-a-broadcast-upload-extension/

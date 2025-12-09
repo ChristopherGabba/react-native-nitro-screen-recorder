@@ -19,6 +19,7 @@ import com.margelo.nitro.core.*
 import com.margelo.nitro.nitroscreenrecorder.utils.RecorderUtils
 import java.io.File
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.coroutines.resume
 import kotlinx.coroutines.delay
 
@@ -34,7 +35,7 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
   private var isServiceBound = false
   private var lastGlobalRecording: File? = null
   private var lastGlobalAudioRecording: File? = null
-  private var globalRecordingErrorCallback: ((RecordingError) -> Unit)? = null
+  private var globalRecordingStartContinuation: kotlin.coroutines.Continuation<Boolean?>? = null
 
   private val screenRecordingListeners =
     mutableListOf<Listener<(ScreenRecordingEvent) -> Unit>>()
@@ -61,6 +62,12 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
         "🔔 notifyGlobalRecordingEvent called with type: ${event.type}, reason: ${event.reason}"
       )
       instance?.notifyListeners(event)
+
+      // Resolve the start promise when recording begins
+      if (event.type == RecordingEventType.GLOBAL && event.reason == RecordingEventReason.BEGAN) {
+        instance?.globalRecordingStartContinuation?.resume(true)
+        instance?.globalRecordingStartContinuation = null
+      }
     }
 
     fun notifyGlobalRecordingFinished(
@@ -82,7 +89,9 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
         TAG,
         "❌ notifyGlobalRecordingError called with error: ${error.name} - ${error.message}"
       )
-      instance?.globalRecordingErrorCallback?.invoke(error)
+      // Resolve the start promise with null (recording failed to start)
+      instance?.globalRecordingStartContinuation?.resume(null)
+      instance?.globalRecordingStartContinuation = null
     }
   }
 
@@ -301,43 +310,52 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
 
   // --- Global Recording Methods ---
 
-  override fun startGlobalRecording(enableMic: Boolean, separateAudioFile: Boolean, onRecordingError: (RecordingError) -> Unit) {
-    if (globalRecordingService?.isCurrentlyRecording() == true) {
-      Log.w(TAG, "⚠️ Global recording already in progress")
-      return
+  override fun startGlobalRecording(enableMic: Boolean, separateAudioFile: Boolean, timeoutMs: Double): Promise<Boolean?> =
+    Promise.async {
+      if (globalRecordingService?.isCurrentlyRecording() == true) {
+        Log.w(TAG, "⚠️ Global recording already in progress")
+        throw Error("BROADCAST_ALREADY_ACTIVE: A screen recording session is already in progress.")
+      }
+      val ctx = NitroModules.applicationContext ?: throw Error("NO_CONTEXT")
+
+      // Cancel any existing pending continuation
+      globalRecordingStartContinuation?.resume(null)
+      globalRecordingStartContinuation = null
+
+      try {
+        val (resultCode, resultData) = requestGlobalRecordingPermission().await()
+
+        if (!isServiceBound) {
+          val serviceIntent = Intent(ctx, ScreenRecordingService::class.java)
+          ctx.bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+        }
+
+        val startIntent = Intent(ctx, ScreenRecordingService::class.java).apply {
+          action = ScreenRecordingService.ACTION_START_RECORDING
+          putExtra(ScreenRecordingService.EXTRA_RESULT_CODE, resultCode)
+          putExtra(ScreenRecordingService.EXTRA_RESULT_DATA, resultData)
+          putExtra(ScreenRecordingService.EXTRA_ENABLE_MIC, enableMic)
+          putExtra(ScreenRecordingService.EXTRA_SEPARATE_AUDIO, separateAudioFile)
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          ctx.startForegroundService(startIntent)
+        } else {
+          ctx.startService(startIntent)
+        }
+
+        // Wait for recording to start (or timeout)
+        kotlinx.coroutines.withTimeoutOrNull(timeoutMs.toLong()) {
+          suspendCancellableCoroutine<Boolean?> { cont ->
+            globalRecordingStartContinuation = cont
+          }
+        }
+      } catch (e: Exception) {
+        Log.e(TAG, "❌ Failed to start global recording: ${e.message}")
+        // User denied permission or other error - return null (cancelled)
+        null
+      }
     }
-    val ctx = NitroModules.applicationContext ?: throw Error("NO_CONTEXT")
-
-    // Store the error callback so it can be used by the service
-    globalRecordingErrorCallback = onRecordingError
-
-    requestGlobalRecordingPermission().then { (resultCode, resultData) ->
-      if (!isServiceBound) {
-        val serviceIntent = Intent(ctx, ScreenRecordingService::class.java)
-        ctx.bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
-      }
-
-      val startIntent = Intent(ctx, ScreenRecordingService::class.java).apply {
-        action = ScreenRecordingService.ACTION_START_RECORDING
-        putExtra(ScreenRecordingService.EXTRA_RESULT_CODE, resultCode)
-        putExtra(ScreenRecordingService.EXTRA_RESULT_DATA, resultData)
-        putExtra(ScreenRecordingService.EXTRA_ENABLE_MIC, enableMic)
-        putExtra(ScreenRecordingService.EXTRA_SEPARATE_AUDIO, separateAudioFile)
-      }
-
-      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-        ctx.startForegroundService(startIntent)
-      } else {
-        ctx.startService(startIntent)
-      }
-    }.catch { error ->
-      val recordingError = RecordingError(
-        name = "GlobalRecordingStartError",
-        message = error.message ?: "Failed to start global recording"
-      )
-      onRecordingError(recordingError) // Use the callback parameter directly
-    }
-  }
 
   override fun stopGlobalRecording(settledTimeMs: Double): Promise<ScreenRecordingFile?> {
     return Promise.async {

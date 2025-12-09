@@ -192,18 +192,27 @@ export type GlobalRecordingInputOptions = {
  *   options: {
  *     enableMic: true, // Enable microphone audio for the recording
  *   },
- *   onRecordingError: (error) => {
- *     console.error('Global recording failed:', error.message);
- *     // Handle the error, e.g., display an alert to the user.
- *   }
+ *   timeoutMs: 120000, // 2 minutes timeout
  * };
+ *
+ * const started = await startGlobalRecording(globalInput);
+ * if (started) {
+ *   console.log('Recording started successfully');
+ * } else {
+ *   console.log('User cancelled or timed out');
+ * }
  * ```
  */
 export type GlobalRecordingInput = {
   /** Optional configuration options for the global recording session. */
   options?: GlobalRecordingInputOptions;
-  /** Callback invoked when the global recording encounters an error during start or execution. */
-  onRecordingError: (error: RecordingError) => void;
+  /**
+   * How long to wait (in milliseconds) for the recording to start before timing out.
+   * On iOS, this covers the time the user spends in the broadcast picker modal.
+   * On Android, this covers the time for the permission dialog and service startup.
+   * @default 120000 (2 minutes)
+   */
+  timeoutMs?: number;
 };
 
 /**
