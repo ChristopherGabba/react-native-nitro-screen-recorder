@@ -8,6 +8,7 @@ import type {
   PermissionStatus,
   RecordingError,
   BroadcastPickerPresentationEvent,
+  ExtensionStatus,
 } from './types';
 
 /**
@@ -74,7 +75,17 @@ export interface NitroScreenRecorder
   stopGlobalRecording(
     settledTimeMs: number
   ): Promise<ScreenRecordingFile | undefined>;
+  markChunkStart(): void;
+  finalizeChunk(
+    settledTimeMs: number
+  ): Promise<ScreenRecordingFile | undefined>;
   retrieveLastGlobalRecording(): ScreenRecordingFile | undefined;
+
+  // ============================================================================
+  // EXTENSION STATUS
+  // ============================================================================
+
+  getExtensionStatus(): ExtensionStatus;
 
   // ============================================================================
   // UTILITIES

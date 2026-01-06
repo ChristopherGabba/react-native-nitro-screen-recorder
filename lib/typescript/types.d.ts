@@ -339,4 +339,31 @@ export interface ScreenRecordingEvent {
  * Track the status of the broadcast picker view for fine tuning system recordings.
  */
 export type BroadcastPickerPresentationEvent = 'showing' | 'dismissed';
+/**
+ * Status information from the broadcast extension.
+ * Used to monitor the health and state of the recording extension process.
+ *
+ * @platform ios-only
+ * @example
+ * ```typescript
+ * const status = getExtensionStatus();
+ * if (status.isAlive) {
+ *   console.log('Extension is running');
+ *   console.log('Mic active:', status.isMicActive);
+ *   console.log('Capturing:', status.isCapturing);
+ * }
+ * ```
+ */
+export interface ExtensionStatus {
+    /** Whether the extension is alive (heartbeat received within last 5 seconds) */
+    isAlive: boolean;
+    /** Whether the microphone is currently receiving audio */
+    isMicActive: boolean;
+    /** Whether actively capturing a chunk (after markChunkStart, before finalizeChunk) */
+    isCapturing: boolean;
+    /** Unix timestamp (seconds) of the last heartbeat, or 0 if none */
+    lastHeartbeat: number;
+    /** Unix timestamp (seconds) when the current chunk started, or 0 if not capturing */
+    chunkStartedAt: number;
+}
 //# sourceMappingURL=types.d.ts.map

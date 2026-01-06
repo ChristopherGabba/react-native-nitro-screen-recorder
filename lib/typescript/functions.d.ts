@@ -1,4 +1,4 @@
-import type { ScreenRecordingFile, PermissionResponse, InAppRecordingInput, ScreenRecordingEvent, PermissionStatus, GlobalRecordingInput, BroadcastPickerPresentationEvent } from './types';
+import type { ScreenRecordingFile, PermissionResponse, InAppRecordingInput, ScreenRecordingEvent, PermissionStatus, GlobalRecordingInput, BroadcastPickerPresentationEvent, ExtensionStatus } from './types';
 /**
  * Gets the current camera permission status without requesting permission.
  *
@@ -135,6 +135,67 @@ export declare function stopGlobalRecording(options?: {
     settledTimeMs: number;
 }): Promise<ScreenRecordingFile | undefined>;
 /**
+ * Marks the start of a new recording chunk during a global recording session.
+ * Discards any content recorded since the last markChunkStart() or finalizeChunk() call,
+ * and begins recording to a fresh file.
+ *
+ * Use this to indicate "I care about content starting NOW". Any previously recorded
+ * but uncommitted content will be discarded.
+ *
+ * @platform iOS-only
+ * @example
+ * ```typescript
+ * startGlobalRecording({ onRecordingError: console.error });
+ * // User navigates around (content is recorded but uncommitted)
+ * markChunkStart(); // "I care about content starting NOW"
+ * // User does something important...
+ * const chunk = await finalizeChunk(); // Get the chunk
+ * ```
+ */
+export declare function markChunkStart(): void;
+/**
+ * Discards any content recorded since the last markChunkStart() or finalizeChunk() call,
+ * and begins recording to a fresh file. This is an alias for markChunkStart().
+ *
+ * Use this when you want to throw away recorded content without saving it.
+ *
+ * @platform iOS-only
+ * @example
+ * ```typescript
+ * markChunkStart(); // Start tracking
+ * // User does something...
+ * flushChunk(); // Oops, discard that, start fresh
+ * // User does something else...
+ * const chunk = await finalizeChunk(); // Save this instead
+ * ```
+ */
+export declare function flushChunk(): void;
+/**
+ * Finalizes the current recording chunk and returns it, then starts a new chunk.
+ * The recording session continues uninterrupted.
+ *
+ * Returns the video file containing content from the last markChunkStart() (or recording start)
+ * until now. Recording continues in a new file after this call.
+ *
+ * @platform iOS-only
+ * @param options.settledTimeMs A "delay" time to wait before retrieving the file. Default = 500ms
+ * @returns Promise resolving to the finalized chunk file
+ * @example
+ * ```typescript
+ * markChunkStart();
+ * // ... user does something important ...
+ * const chunk1 = await finalizeChunk();
+ * await uploadToServer(chunk1);
+ *
+ * // Recording continues...
+ * const chunk2 = await finalizeChunk();
+ * await uploadToServer(chunk2);
+ * ```
+ */
+export declare function finalizeChunk(options?: {
+    settledTimeMs: number;
+}): Promise<ScreenRecordingFile | undefined>;
+/**
  * Retrieves the most recently completed global recording file.
  * Returns undefined if no global recording has been completed.
  *
@@ -192,6 +253,27 @@ export declare function addScreenRecordingListener({ listener, ignoreRecordingsI
  * ```
  */
 export declare function addBroadcastPickerListener(listener: (event: BroadcastPickerPresentationEvent) => void): () => void;
+/**
+ * Gets the current status of the broadcast extension.
+ * Useful for monitoring if the extension is alive and processing buffers.
+ *
+ * @platform iOS-only
+ * @returns ExtensionStatus object with isAlive, isMicActive, isCapturing, lastHeartbeat, and chunkStartedAt
+ * @example
+ * ```typescript
+ * const status = getExtensionStatus();
+ * if (status.isAlive) {
+ *   console.log('Extension is running');
+ *   console.log('Mic active:', status.isMicActive);
+ *   console.log('Capturing:', status.isCapturing);
+ *   if (status.chunkStartedAt > 0) {
+ *     const elapsed = Date.now() / 1000 - status.chunkStartedAt;
+ *     console.log('Recording for:', elapsed, 'seconds');
+ *   }
+ * }
+ * ```
+ */
+export declare function getExtensionStatus(): ExtensionStatus;
 /**
  * Clears all cached recording files to free up storage space.
  * This will delete temporary files but not files that have been explicitly saved.

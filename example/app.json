@@ -21,11 +21,11 @@
       "**/*"
     ],
     "ios": {
-      "bundleIdentifier": "nitroscreenrecorderexample.example",
+      "bundleIdentifier": "com.listenlabs.screenrecorderexample",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "ScreenRecorder needs access to your Microphone."
       },
-      "appleTeamId": "32U9AXHQSK"
+      "appleTeamId": "96YBPK674P"
     },
     "android": {
       "package": "nitroscreenrecorderexample.example",

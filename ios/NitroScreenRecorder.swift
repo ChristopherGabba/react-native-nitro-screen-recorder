@@ -637,6 +637,65 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     }
   }
 
+  // MARK: - Chunk Management for Global Recording
+
+  /**
+   Marks the start of a new recording chunk. Discards any content recorded since the last
+   markChunkStart() or finalizeChunk() call, and begins recording to a fresh file.
+   Use this to indicate "I care about content starting NOW".
+   */
+  func markChunkStart() throws {
+    guard isGlobalRecordingActive else {
+      print("⚠️ markChunkStart called but no active global recording.")
+      return
+    }
+
+    let notif = "com.nitroscreenrecorder.markChunk" as CFString
+    CFNotificationCenterPostNotification(
+      CFNotificationCenterGetDarwinNotifyCenter(),
+      CFNotificationName(notif),
+      nil,
+      nil,
+      true
+    )
+    print("📍 markChunkStart: Notification sent to broadcast extension")
+  }
+
+  /**
+   Finalizes the current recording chunk and returns it, then starts a new chunk.
+   The recording session continues uninterrupted.
+   Returns the video file containing content from the last markChunkStart() (or recording start) until now.
+   */
+  func finalizeChunk(settledTimeMs: Double) throws -> Promise<ScreenRecordingFile?> {
+    return Promise.async {
+      guard self.isGlobalRecordingActive else {
+        print("⚠️ finalizeChunk called but no active global recording.")
+        return nil
+      }
+
+      let notif = "com.nitroscreenrecorder.finalizeChunk" as CFString
+      CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFNotificationName(notif),
+        nil,
+        nil,
+        true
+      )
+      print("📦 finalizeChunk: Notification sent to broadcast extension")
+
+      // Wait for the specified settle time to allow the broadcast to finish writing the file.
+      let settleTimeNanoseconds = UInt64(settledTimeMs * 1_000_000)  // Convert ms to nanoseconds
+      try? await Task.sleep(nanoseconds: settleTimeNanoseconds)
+
+      do {
+        return try self.retrieveLastGlobalRecording()
+      } catch {
+        print("❌ retrieveLastGlobalRecording failed after finalizeChunk:", error)
+        return nil
+      }
+    }
+  }
+
   func retrieveLastGlobalRecording() throws -> ScreenRecordingFile? {
     // Resolve app group documents directory
     guard let appGroupId = try? getAppGroupIdentifier(),
@@ -846,5 +905,43 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
   func clearRecordingCache() throws {
     try safelyClearGlobalRecordingFiles()
     safelyClearInAppRecordingFiles()
+  }
+
+  // MARK: - Extension Status
+
+  /**
+   Returns the current status of the broadcast extension by reading from shared UserDefaults.
+   Includes heartbeat, mic status, and chunk status.
+   */
+  func getExtensionStatus() throws -> ExtensionStatus {
+    guard let appGroupId = try? getAppGroupIdentifier(),
+      let defaults = UserDefaults(suiteName: appGroupId)
+    else {
+      return ExtensionStatus(
+        isAlive: false,
+        isMicActive: false,
+        isCapturing: false,
+        lastHeartbeat: 0,
+        chunkStartedAt: 0
+      )
+    }
+
+    let lastHeartbeat = defaults.double(forKey: "ExtensionHeartbeat")
+    let currentTime = Date().timeIntervalSince1970
+
+    // Extension is considered alive if heartbeat was within last 5 seconds
+    // (using generous threshold due to cross-process UserDefaults sync delays)
+    let isAlive = lastHeartbeat > 0 && (currentTime - lastHeartbeat) < 5.0
+    let isMicActive = defaults.bool(forKey: "ExtensionMicActive")
+    let isCapturing = defaults.bool(forKey: "ExtensionCapturing")
+    let chunkStartedAt = defaults.double(forKey: "ExtensionChunkStartedAt")
+
+    return ExtensionStatus(
+      isAlive: isAlive,
+      isMicActive: isMicActive,
+      isCapturing: isCapturing,
+      lastHeartbeat: lastHeartbeat,
+      chunkStartedAt: chunkStartedAt
+    )
   }
 }

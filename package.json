@@ -1,6 +1,6 @@
 {
   "name": "react-native-nitro-screen-recorder",
-  "version": "0.9.3",
+  "version": "1.0.0",
   "description": "A library to capture screen recordings with react-native powered by NitroModules.",
   "main": "lib/commonjs/index",
   "module": "lib/module/index",
@@ -31,6 +31,10 @@
   ],
   "scripts": {
     "example": "yarn workspace react-native-nitro-screen-recorder-example",
+    "dev": "yarn prepare && cd example && EXPO_NO_GIT_STATUS=1 npx expo prebuild --clean && npx expo run:ios",
+    "dev:android": "yarn prepare && cd example && EXPO_NO_GIT_STATUS=1 npx expo prebuild --clean && npx expo run:android",
+    "dev:fast": "cd example && npx expo run:ios",
+    "dev:prebuild": "cd example && EXPO_NO_GIT_STATUS=1 npx expo prebuild --clean",
     "test": "jest",
     "typecheck": "tsc",
     "lint": "eslint \"**/*.{js,ts,tsx}\"",
