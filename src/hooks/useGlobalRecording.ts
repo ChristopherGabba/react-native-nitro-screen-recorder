@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   addBroadcastPickerListener,
   addScreenRecordingListener,
   retrieveLastGlobalRecording,
+  getExtensionStatus,
 } from '../functions';
-import type { ScreenRecordingFile } from '../types';
+import type { ScreenRecordingFile, ExtensionStatus } from '../types';
 
 /**
  * A "modern" sleep statement.
@@ -13,6 +14,19 @@ import type { ScreenRecordingFile } from '../types';
  */
 const delay = (ms: number) =>
   new Promise((resolve) => setTimeout(resolve as () => void, ms));
+
+/**
+ * Default extension status when idle.
+ */
+const IDLE_STATUS: ExtensionStatus = {
+  state: 'idle',
+  isBroadcasting: false,
+  isExtensionRunning: false,
+  isMicrophoneEnabled: false,
+  isCapturingChunk: false,
+  lastHeartbeat: 0,
+  chunkStartedAt: 0,
+};
 
 /**
  * Configuration options for the global recording hook.
@@ -51,6 +65,11 @@ type GlobalRecordingHookInput = {
    * external system. This is useful if you only want to track global recordings that were started via the startGlobalRecording function.
    */
   ignoreRecordingsInitiatedElsewhere?: boolean;
+  /**
+   * How often to poll the extension status in milliseconds.
+   * @default 200
+   */
+  pollingIntervalMs?: number;
 };
 
 /**
@@ -62,6 +81,11 @@ type GlobalRecordingHookOutput = {
    * Updates automatically as recordings start and stop.
    */
   isRecording: boolean;
+  /**
+   * Current status of the broadcast extension (iOS only).
+   * Includes detailed state like 'idle', 'starting', 'running', 'capturingChunk'.
+   */
+  extensionStatus: ExtensionStatus;
 };
 
 /**
@@ -89,7 +113,7 @@ type GlobalRecordingHookOutput = {
  *
  * @example
  * ```tsx
- *   const { isRecording } = useGlobalRecording({
+ *   const { isRecording, extensionStatus } = useGlobalRecording({
  *     onRecordingStarted: () => {
  *       analytics.track('recording_started');
  *     },
@@ -97,7 +121,7 @@ type GlobalRecordingHookOutput = {
  *       console.log("User tried to initiate recording")
  *     },
  *     onBroadcastModalDismissed: () => {
- *       redirectToAnotherApp()
+ *       // Good place to show "Starting..." in your UI
  *     },
  *     onRecordingFinished: async (file) => {
  *       if (file) {
@@ -116,7 +140,13 @@ export const useGlobalRecording = (
   props?: GlobalRecordingHookInput
 ): GlobalRecordingHookOutput => {
   const [isRecording, setIsRecording] = useState(false);
+  const [extensionStatus, setExtensionStatus] =
+    useState<ExtensionStatus>(IDLE_STATUS);
 
+  // Use ref to track if we should keep polling (avoids stale closure issues)
+  const shouldPollRef = useRef(false);
+
+  // Screen recording listener
   useEffect(() => {
     const unsubscribe = addScreenRecordingListener({
       ignoreRecordingsInitiatedElsewhere:
@@ -141,15 +171,51 @@ export const useGlobalRecording = (
     return unsubscribe;
   }, [props]);
 
+  // Broadcast picker listener
   useEffect(() => {
     const unsubscribe = addBroadcastPickerListener((event) => {
-      event === 'dismissed'
-        ? props?.onBroadcastModalDismissed?.()
-        : props?.onBroadcastModalShown?.();
+      if (event === 'dismissed') {
+        props?.onBroadcastModalDismissed?.();
+      } else {
+        props?.onBroadcastModalShown?.();
+      }
     });
 
     return unsubscribe;
   }, [props]);
 
-  return { isRecording };
+  // Extension status polling - only poll while recording or extension is active
+  useEffect(() => {
+    const shouldPoll = isRecording || extensionStatus.isExtensionRunning;
+
+    shouldPollRef.current = shouldPoll;
+
+    if (!shouldPoll) {
+      // Reset to idle when nothing is happening
+      if (extensionStatus.state !== 'idle') {
+        setExtensionStatus(IDLE_STATUS);
+      }
+      return;
+    }
+
+    const pollingInterval = props?.pollingIntervalMs ?? 200;
+
+    const pollStatus = () => {
+      if (!shouldPollRef.current) return;
+      const status = getExtensionStatus();
+      setExtensionStatus(status);
+    };
+
+    pollStatus(); // Poll immediately
+    const interval = setInterval(pollStatus, pollingInterval);
+
+    return () => clearInterval(interval);
+  }, [
+    isRecording,
+    extensionStatus.isExtensionRunning,
+    extensionStatus.state,
+    props?.pollingIntervalMs,
+  ]);
+
+  return { isRecording, extensionStatus };
 };

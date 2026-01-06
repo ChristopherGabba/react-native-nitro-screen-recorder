@@ -14,14 +14,14 @@ namespace margelo::nitro::nitroscreenrecorder { struct AudioRecordingFile; }
 namespace margelo::nitro::nitroscreenrecorder { enum class BroadcastPickerPresentationEvent; }
 // Forward declaration of `CameraDevice` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { enum class CameraDevice; }
-// Forward declaration of `ExtensionStatus` to properly resolve imports.
-namespace margelo::nitro::nitroscreenrecorder { struct ExtensionStatus; }
 // Forward declaration of `HybridNitroScreenRecorderSpec` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { class HybridNitroScreenRecorderSpec; }
 // Forward declaration of `PermissionResponse` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct PermissionResponse; }
 // Forward declaration of `PermissionStatus` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { enum class PermissionStatus; }
+// Forward declaration of `RawExtensionStatus` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { struct RawExtensionStatus; }
 // Forward declaration of `RecorderCameraStyle` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct RecorderCameraStyle; }
 // Forward declaration of `RecordingError` to properly resolve imports.
@@ -39,10 +39,10 @@ namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingFile; }
 #include "AudioRecordingFile.hpp"
 #include "BroadcastPickerPresentationEvent.hpp"
 #include "CameraDevice.hpp"
-#include "ExtensionStatus.hpp"
 #include "HybridNitroScreenRecorderSpec.hpp"
 #include "PermissionResponse.hpp"
 #include "PermissionStatus.hpp"
+#include "RawExtensionStatus.hpp"
 #include "RecorderCameraStyle.hpp"
 #include "RecordingError.hpp"
 #include "RecordingEventReason.hpp"

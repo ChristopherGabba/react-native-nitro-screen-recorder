@@ -34,8 +34,8 @@ namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingFile; }
 namespace margelo::nitro::nitroscreenrecorder { struct AudioRecordingFile; }
 // Forward declaration of `RecordingError` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
-// Forward declaration of `ExtensionStatus` to properly resolve imports.
-namespace margelo::nitro::nitroscreenrecorder { struct ExtensionStatus; }
+// Forward declaration of `RawExtensionStatus` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { struct RawExtensionStatus; }
 
 #include "PermissionStatus.hpp"
 #include "PermissionResponse.hpp"
@@ -52,7 +52,7 @@ namespace margelo::nitro::nitroscreenrecorder { struct ExtensionStatus; }
 #include <string>
 #include "AudioRecordingFile.hpp"
 #include "RecordingError.hpp"
-#include "ExtensionStatus.hpp"
+#include "RawExtensionStatus.hpp"
 
 #include "NitroScreenRecorder-Swift-Cxx-Umbrella.hpp"
 
@@ -216,7 +216,7 @@ namespace margelo::nitro::nitroscreenrecorder {
       auto __value = std::move(__result.value());
       return __value;
     }
-    inline ExtensionStatus getExtensionStatus() override {
+    inline RawExtensionStatus getExtensionStatus() override {
       auto __result = _swiftPart.getExtensionStatus();
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());

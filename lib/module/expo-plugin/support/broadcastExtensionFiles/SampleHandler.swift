@@ -51,6 +51,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
   private var appAudioNodeURL: URL  // App/system audio
   private var sawMicBuffers = false
   private var separateAudioFile: Bool = false
+  private var isBroadcastActive = false
   private var isCapturing = false
   private var chunkStartedAt: Double = 0
 
@@ -148,6 +149,18 @@ final class SampleHandler: RPBroadcastSampleHandler {
   override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
     startListeningForNotifications()
 
+    // Mark broadcast as active immediately and reset heartbeat
+    // Resetting heartbeat to 0 ensures the main app detects "starting" state
+    // (avoids stale heartbeat from previous session causing issues)
+    isBroadcastActive = true
+    if let groupID = hostAppGroupIdentifier,
+      let defaults = UserDefaults(suiteName: groupID)
+    {
+      defaults.set(true, forKey: "ExtensionBroadcastActive")
+      defaults.set(0.0, forKey: "ExtensionHeartbeat")  // Reset to trigger "starting" state
+      defaults.synchronize()
+    }
+
     guard let groupID = hostAppGroupIdentifier else {
       finishBroadcastWithError(
         NSError(
@@ -240,6 +253,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
       let defaults = UserDefaults(suiteName: groupID)
     else { return }
 
+    defaults.set(isBroadcastActive, forKey: "ExtensionBroadcastActive")
     defaults.set(Date().timeIntervalSince1970, forKey: "ExtensionHeartbeat")
     defaults.set(sawMicBuffers, forKey: "ExtensionMicActive")
     defaults.set(isCapturing, forKey: "ExtensionCapturing")
@@ -457,6 +471,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     if let groupID = hostAppGroupIdentifier,
       let defaults = UserDefaults(suiteName: groupID)
     {
+      defaults.removeObject(forKey: "ExtensionBroadcastActive")
       defaults.removeObject(forKey: "ExtensionHeartbeat")
       defaults.removeObject(forKey: "ExtensionMicActive")
       defaults.removeObject(forKey: "ExtensionCapturing")

@@ -132,7 +132,7 @@ abstract class HybridNitroScreenRecorderSpec: HybridObject() {
   
   @DoNotStrip
   @Keep
-  abstract fun getExtensionStatus(): ExtensionStatus
+  abstract fun getExtensionStatus(): RawExtensionStatus
   
   @DoNotStrip
   @Keep

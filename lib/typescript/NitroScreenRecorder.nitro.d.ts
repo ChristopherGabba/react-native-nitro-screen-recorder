@@ -1,5 +1,5 @@
 import type { HybridObject } from 'react-native-nitro-modules';
-import type { CameraDevice, RecorderCameraStyle, PermissionResponse, ScreenRecordingFile, ScreenRecordingEvent, PermissionStatus, RecordingError, BroadcastPickerPresentationEvent, ExtensionStatus } from './types';
+import type { CameraDevice, RecorderCameraStyle, PermissionResponse, ScreenRecordingFile, ScreenRecordingEvent, PermissionStatus, RecordingError, BroadcastPickerPresentationEvent, RawExtensionStatus } from './types';
 /**
  * ============================================================================
  * NOTES WITH NITRO-MODULES
@@ -29,7 +29,7 @@ export interface NitroScreenRecorder extends HybridObject<{
     markChunkStart(): void;
     finalizeChunk(settledTimeMs: number): Promise<ScreenRecordingFile | undefined>;
     retrieveLastGlobalRecording(): ScreenRecordingFile | undefined;
-    getExtensionStatus(): ExtensionStatus;
+    getExtensionStatus(): RawExtensionStatus;
     clearRecordingCache(): void;
 }
 //# sourceMappingURL=NitroScreenRecorder.nitro.d.ts.map

@@ -8,7 +8,7 @@ import type {
   PermissionStatus,
   RecordingError,
   BroadcastPickerPresentationEvent,
-  ExtensionStatus,
+  RawExtensionStatus,
 } from './types';
 
 /**
@@ -85,7 +85,7 @@ export interface NitroScreenRecorder
   // EXTENSION STATUS
   // ============================================================================
 
-  getExtensionStatus(): ExtensionStatus;
+  getExtensionStatus(): RawExtensionStatus;
 
   // ============================================================================
   // UTILITIES

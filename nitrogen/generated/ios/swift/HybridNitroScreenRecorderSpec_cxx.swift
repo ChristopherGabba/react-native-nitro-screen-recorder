@@ -392,14 +392,14 @@ open class HybridNitroScreenRecorderSpec_cxx {
   }
   
   @inline(__always)
-  public final func getExtensionStatus() -> bridge.Result_ExtensionStatus_ {
+  public final func getExtensionStatus() -> bridge.Result_RawExtensionStatus_ {
     do {
       let __result = try self.__implementation.getExtensionStatus()
       let __resultCpp = __result
-      return bridge.create_Result_ExtensionStatus_(__resultCpp)
+      return bridge.create_Result_RawExtensionStatus_(__resultCpp)
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()
-      return bridge.create_Result_ExtensionStatus_(__exceptionPtr)
+      return bridge.create_Result_RawExtensionStatus_(__exceptionPtr)
     }
   }
   

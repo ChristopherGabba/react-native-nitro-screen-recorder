@@ -29,8 +29,8 @@ namespace margelo::nitro::nitroscreenrecorder { enum class CameraDevice; }
 namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingFile; }
 // Forward declaration of `RecordingError` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
-// Forward declaration of `ExtensionStatus` to properly resolve imports.
-namespace margelo::nitro::nitroscreenrecorder { struct ExtensionStatus; }
+// Forward declaration of `RawExtensionStatus` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { struct RawExtensionStatus; }
 
 #include "PermissionStatus.hpp"
 #include "PermissionResponse.hpp"
@@ -43,7 +43,7 @@ namespace margelo::nitro::nitroscreenrecorder { struct ExtensionStatus; }
 #include "ScreenRecordingFile.hpp"
 #include <optional>
 #include "RecordingError.hpp"
-#include "ExtensionStatus.hpp"
+#include "RawExtensionStatus.hpp"
 
 namespace margelo::nitro::nitroscreenrecorder {
 
@@ -92,7 +92,7 @@ namespace margelo::nitro::nitroscreenrecorder {
       virtual void markChunkStart() = 0;
       virtual std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> finalizeChunk(double settledTimeMs) = 0;
       virtual std::optional<ScreenRecordingFile> retrieveLastGlobalRecording() = 0;
-      virtual ExtensionStatus getExtensionStatus() = 0;
+      virtual RawExtensionStatus getExtensionStatus() = 0;
       virtual void clearRecordingCache() = 0;
 
     protected:

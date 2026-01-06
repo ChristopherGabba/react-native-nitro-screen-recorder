@@ -12,14 +12,14 @@
 namespace margelo::nitro::nitroscreenrecorder { struct AudioRecordingFile; }
 // Forward declaration of `BroadcastPickerPresentationEvent` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { enum class BroadcastPickerPresentationEvent; }
-// Forward declaration of `ExtensionStatus` to properly resolve imports.
-namespace margelo::nitro::nitroscreenrecorder { struct ExtensionStatus; }
 // Forward declaration of `HybridNitroScreenRecorderSpec` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { class HybridNitroScreenRecorderSpec; }
 // Forward declaration of `PermissionResponse` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct PermissionResponse; }
 // Forward declaration of `PermissionStatus` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { enum class PermissionStatus; }
+// Forward declaration of `RawExtensionStatus` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { struct RawExtensionStatus; }
 // Forward declaration of `RecordingError` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 // Forward declaration of `RecordingEventReason` to properly resolve imports.
@@ -38,10 +38,10 @@ namespace NitroScreenRecorder { class HybridNitroScreenRecorderSpec_cxx; }
 // Include C++ defined types
 #include "AudioRecordingFile.hpp"
 #include "BroadcastPickerPresentationEvent.hpp"
-#include "ExtensionStatus.hpp"
 #include "HybridNitroScreenRecorderSpec.hpp"
 #include "PermissionResponse.hpp"
 #include "PermissionStatus.hpp"
+#include "RawExtensionStatus.hpp"
 #include "RecordingError.hpp"
 #include "RecordingEventReason.hpp"
 #include "RecordingEventType.hpp"
@@ -394,13 +394,13 @@ namespace margelo::nitro::nitroscreenrecorder::bridge::swift {
     return Result<std::optional<ScreenRecordingFile>>::withError(error);
   }
   
-  // pragma MARK: Result<ExtensionStatus>
-  using Result_ExtensionStatus_ = Result<ExtensionStatus>;
-  inline Result_ExtensionStatus_ create_Result_ExtensionStatus_(const ExtensionStatus& value) noexcept {
-    return Result<ExtensionStatus>::withValue(value);
+  // pragma MARK: Result<RawExtensionStatus>
+  using Result_RawExtensionStatus_ = Result<RawExtensionStatus>;
+  inline Result_RawExtensionStatus_ create_Result_RawExtensionStatus_(const RawExtensionStatus& value) noexcept {
+    return Result<RawExtensionStatus>::withValue(value);
   }
-  inline Result_ExtensionStatus_ create_Result_ExtensionStatus_(const std::exception_ptr& error) noexcept {
-    return Result<ExtensionStatus>::withError(error);
+  inline Result_RawExtensionStatus_ create_Result_RawExtensionStatus_(const std::exception_ptr& error) noexcept {
+    return Result<RawExtensionStatus>::withError(error);
   }
 
 } // namespace margelo::nitro::nitroscreenrecorder::bridge::swift

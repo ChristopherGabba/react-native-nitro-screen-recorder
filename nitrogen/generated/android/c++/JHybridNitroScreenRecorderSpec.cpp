@@ -15,8 +15,8 @@ namespace margelo::nitro::nitroscreenrecorder { struct PermissionResponse; }
 namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingFile; }
 // Forward declaration of `AudioRecordingFile` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct AudioRecordingFile; }
-// Forward declaration of `ExtensionStatus` to properly resolve imports.
-namespace margelo::nitro::nitroscreenrecorder { struct ExtensionStatus; }
+// Forward declaration of `RawExtensionStatus` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { struct RawExtensionStatus; }
 // Forward declaration of `ScreenRecordingEvent` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingEvent; }
 // Forward declaration of `RecordingEventType` to properly resolve imports.
@@ -44,8 +44,8 @@ namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 #include <string>
 #include "AudioRecordingFile.hpp"
 #include "JAudioRecordingFile.hpp"
-#include "ExtensionStatus.hpp"
-#include "JExtensionStatus.hpp"
+#include "RawExtensionStatus.hpp"
+#include "JRawExtensionStatus.hpp"
 #include "ScreenRecordingEvent.hpp"
 #include <functional>
 #include "JFunc_void_ScreenRecordingEvent.hpp"
@@ -238,8 +238,8 @@ namespace margelo::nitro::nitroscreenrecorder {
     auto __result = method(_javaPart);
     return __result != nullptr ? std::make_optional(__result->toCpp()) : std::nullopt;
   }
-  ExtensionStatus JHybridNitroScreenRecorderSpec::getExtensionStatus() {
-    static const auto method = javaClassStatic()->getMethod<jni::local_ref<JExtensionStatus>()>("getExtensionStatus");
+  RawExtensionStatus JHybridNitroScreenRecorderSpec::getExtensionStatus() {
+    static const auto method = javaClassStatic()->getMethod<jni::local_ref<JRawExtensionStatus>()>("getExtensionStatus");
     auto __result = method(_javaPart);
     return __result->toCpp();
   }

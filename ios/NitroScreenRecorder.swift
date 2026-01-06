@@ -913,14 +913,15 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
    Returns the current status of the broadcast extension by reading from shared UserDefaults.
    Includes heartbeat, mic status, and chunk status.
    */
-  func getExtensionStatus() throws -> ExtensionStatus {
+  func getExtensionStatus() throws -> RawExtensionStatus {
     guard let appGroupId = try? getAppGroupIdentifier(),
       let defaults = UserDefaults(suiteName: appGroupId)
     else {
-      return ExtensionStatus(
-        isAlive: false,
-        isMicActive: false,
-        isCapturing: false,
+      return RawExtensionStatus(
+        isBroadcasting: false,
+        isExtensionRunning: false,
+        isMicrophoneEnabled: false,
+        isCapturingChunk: false,
         lastHeartbeat: 0,
         chunkStartedAt: 0
       )
@@ -929,17 +930,24 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     let lastHeartbeat = defaults.double(forKey: "ExtensionHeartbeat")
     let currentTime = Date().timeIntervalSince1970
 
-    // Extension is considered alive if heartbeat was within last 5 seconds
+    // Extension is considered running if heartbeat was within last 5 seconds
     // (using generous threshold due to cross-process UserDefaults sync delays)
-    let isAlive = lastHeartbeat > 0 && (currentTime - lastHeartbeat) < 5.0
-    let isMicActive = defaults.bool(forKey: "ExtensionMicActive")
-    let isCapturing = defaults.bool(forKey: "ExtensionCapturing")
+    let isExtensionRunning = lastHeartbeat > 0 && (currentTime - lastHeartbeat) < 5.0
+
+    // isBroadcasting is true if:
+    // 1. UserDefaults says it's active, AND
+    // 2. Either isExtensionRunning is true, OR we haven't received any heartbeat yet (still initializing)
+    let rawBroadcastActive = defaults.bool(forKey: "ExtensionBroadcastActive")
+    let isBroadcasting = rawBroadcastActive && (isExtensionRunning || lastHeartbeat == 0)
+    let isMicrophoneEnabled = defaults.bool(forKey: "ExtensionMicActive")
+    let isCapturingChunk = defaults.bool(forKey: "ExtensionCapturing")
     let chunkStartedAt = defaults.double(forKey: "ExtensionChunkStartedAt")
 
-    return ExtensionStatus(
-      isAlive: isAlive,
-      isMicActive: isMicActive,
-      isCapturing: isCapturing,
+    return RawExtensionStatus(
+      isBroadcasting: isBroadcasting,
+      isExtensionRunning: isExtensionRunning,
+      isMicrophoneEnabled: isMicrophoneEnabled,
+      isCapturingChunk: isCapturingChunk,
       lastHeartbeat: lastHeartbeat,
       chunkStartedAt: chunkStartedAt
     )

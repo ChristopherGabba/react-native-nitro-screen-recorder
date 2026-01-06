@@ -1,4 +1,4 @@
-import type { ScreenRecordingFile } from '../types';
+import type { ScreenRecordingFile, ExtensionStatus } from '../types';
 /**
  * Configuration options for the global recording hook.
  */
@@ -33,6 +33,11 @@ type GlobalRecordingHookInput = {
      * external system. This is useful if you only want to track global recordings that were started via the startGlobalRecording function.
      */
     ignoreRecordingsInitiatedElsewhere?: boolean;
+    /**
+     * How often to poll the extension status in milliseconds.
+     * @default 200
+     */
+    pollingIntervalMs?: number;
 };
 /**
  * Return value from the global recording hook.
@@ -43,6 +48,11 @@ type GlobalRecordingHookOutput = {
      * Updates automatically as recordings start and stop.
      */
     isRecording: boolean;
+    /**
+     * Current status of the broadcast extension (iOS only).
+     * Includes detailed state like 'idle', 'starting', 'running', 'capturingChunk'.
+     */
+    extensionStatus: ExtensionStatus;
 };
 /**
  * React hook for monitoring and responding to global screen recording events.
@@ -69,7 +79,7 @@ type GlobalRecordingHookOutput = {
  *
  * @example
  * ```tsx
- *   const { isRecording } = useGlobalRecording({
+ *   const { isRecording, extensionStatus } = useGlobalRecording({
  *     onRecordingStarted: () => {
  *       analytics.track('recording_started');
  *     },
@@ -77,7 +87,7 @@ type GlobalRecordingHookOutput = {
  *       console.log("User tried to initiate recording")
  *     },
  *     onBroadcastModalDismissed: () => {
- *       redirectToAnotherApp()
+ *       // Good place to show "Starting..." in your UI
  *     },
  *     onRecordingFinished: async (file) => {
  *       if (file) {

@@ -258,18 +258,23 @@ export declare function addBroadcastPickerListener(listener: (event: BroadcastPi
  * Useful for monitoring if the extension is alive and processing buffers.
  *
  * @platform iOS-only
- * @returns ExtensionStatus object with isAlive, isMicActive, isCapturing, lastHeartbeat, and chunkStartedAt
+ * @returns ExtensionStatus object with state, isBroadcasting, isExtensionRunning, isMicrophoneEnabled, isCapturingChunk, lastHeartbeat, and chunkStartedAt
  * @example
  * ```typescript
  * const status = getExtensionStatus();
- * if (status.isAlive) {
- *   console.log('Extension is running');
- *   console.log('Mic active:', status.isMicActive);
- *   console.log('Capturing:', status.isCapturing);
- *   if (status.chunkStartedAt > 0) {
- *     const elapsed = Date.now() / 1000 - status.chunkStartedAt;
- *     console.log('Recording for:', elapsed, 'seconds');
- *   }
+ * switch (status.state) {
+ *   case 'idle':
+ *     console.log('Not recording');
+ *     break;
+ *   case 'starting':
+ *     console.log('Starting up...');
+ *     break;
+ *   case 'running':
+ *     console.log('Recording!', status.isMicrophoneEnabled ? 'with mic' : 'no mic');
+ *     break;
+ *   case 'capturingChunk':
+ *     console.log('Capturing chunk for', Date.now()/1000 - status.chunkStartedAt, 'seconds');
+ *     break;
  * }
  * ```
  */
