@@ -58,9 +58,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
   // Serial queue for thread-safe writer operations
   private let writerQueue = DispatchQueue(label: "com.nitroscreenrecorder.writerQueue")
 
-  // Heartbeat tracking - update status every N frames to avoid excessive writes
+  // Status update tracking - update every N frames to avoid excessive writes
   private var frameCount: Int = 0
-  private let heartbeatInterval: Int = 15  // Update every 15 frames (~0.25 sec at 60fps)
+  private let statusUpdateInterval: Int = 15  // Update every 15 frames (~0.25 sec at 60fps)
 
   // MARK: – Init
   override init() {
@@ -149,17 +149,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
   override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
     startListeningForNotifications()
 
-    // Mark broadcast as active immediately and reset heartbeat
-    // Resetting heartbeat to 0 ensures the main app detects "starting" state
-    // (avoids stale heartbeat from previous session causing issues)
+    // Mark broadcast as active
     isBroadcastActive = true
-    if let groupID = hostAppGroupIdentifier,
-      let defaults = UserDefaults(suiteName: groupID)
-    {
-      defaults.set(true, forKey: "ExtensionBroadcastActive")
-      defaults.set(0.0, forKey: "ExtensionHeartbeat")  // Reset to trigger "starting" state
-      defaults.synchronize()
-    }
+    updateExtensionStatus()
 
     guard let groupID = hostAppGroupIdentifier else {
       finishBroadcastWithError(
@@ -230,10 +222,10 @@ final class SampleHandler: RPBroadcastSampleHandler {
         self.sawMicBuffers = true
       }
 
-      // Update heartbeat periodically (not every frame)
+      // Update status periodically (not every frame)
       if sampleBufferType == .video {
         self.frameCount += 1
-        if self.frameCount >= self.heartbeatInterval {
+        if self.frameCount >= self.statusUpdateInterval {
           self.frameCount = 0
           self.updateExtensionStatus()
         }
@@ -253,8 +245,6 @@ final class SampleHandler: RPBroadcastSampleHandler {
       let defaults = UserDefaults(suiteName: groupID)
     else { return }
 
-    defaults.set(isBroadcastActive, forKey: "ExtensionBroadcastActive")
-    defaults.set(Date().timeIntervalSince1970, forKey: "ExtensionHeartbeat")
     defaults.set(sawMicBuffers, forKey: "ExtensionMicActive")
     defaults.set(isCapturing, forKey: "ExtensionCapturing")
     defaults.set(chunkStartedAt, forKey: "ExtensionChunkStartedAt")
@@ -467,18 +457,10 @@ final class SampleHandler: RPBroadcastSampleHandler {
   }
 
   override func broadcastFinished() {
-    // Clear extension status
-    if let groupID = hostAppGroupIdentifier,
-      let defaults = UserDefaults(suiteName: groupID)
-    {
-      defaults.removeObject(forKey: "ExtensionBroadcastActive")
-      defaults.removeObject(forKey: "ExtensionHeartbeat")
-      defaults.removeObject(forKey: "ExtensionMicActive")
-      defaults.removeObject(forKey: "ExtensionCapturing")
-      defaults.removeObject(forKey: "ExtensionChunkStartedAt")
+    guard let writer else {
+      clearExtensionStatus()
+      return
     }
-
-    guard let writer else { return }
 
     // Finish writing - use finishWithAudio to get both video and audio URLs
     let result: BroadcastWriter.FinishResult
@@ -557,6 +539,21 @@ final class SampleHandler: RPBroadcastSampleHandler {
       .set(sawMicBuffers, forKey: "LastBroadcastMicrophoneWasEnabled")
     UserDefaults(suiteName: groupID)?
       .set(separateAudioFile, forKey: "LastBroadcastHadSeparateAudio")
+
+    // Clear extension status AFTER all file operations complete
+    clearExtensionStatus()
+  }
+
+  /// Clears all extension status from UserDefaults
+  private func clearExtensionStatus() {
+    guard let groupID = hostAppGroupIdentifier,
+      let defaults = UserDefaults(suiteName: groupID)
+    else { return }
+
+    defaults.removeObject(forKey: "ExtensionMicActive")
+    defaults.removeObject(forKey: "ExtensionCapturing")
+    defaults.removeObject(forKey: "ExtensionChunkStartedAt")
+    defaults.synchronize()
   }
 }
 

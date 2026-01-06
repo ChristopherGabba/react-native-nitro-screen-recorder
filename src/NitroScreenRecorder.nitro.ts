@@ -86,6 +86,7 @@ export interface NitroScreenRecorder
   // ============================================================================
 
   getExtensionStatus(): RawExtensionStatus;
+  isScreenBeingRecorded(): boolean;
 
   // ============================================================================
   // UTILITIES

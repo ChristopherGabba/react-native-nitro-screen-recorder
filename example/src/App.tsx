@@ -6,7 +6,6 @@ import {
   Platform,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import * as ScreenRecorder from '../../';
 import { useVideoPlayer, VideoView } from 'expo-video';
@@ -35,14 +34,10 @@ export default function App() {
   const [isChunkingActive, setIsChunkingActive] = useState(false);
   const [selectedChunk, setSelectedChunk] = useState<Chunk | undefined>();
 
-  // Track if we're waiting for broadcast to start (after modal dismisses)
-  const [isStarting, setIsStarting] = useState(false);
-
   // Use the hook - it handles extension status polling while recording
   const { isRecording, extensionStatus } = ScreenRecorder.useGlobalRecording({
     onRecordingStarted: () => {
       console.log('🎬 Recording started');
-      setIsStarting(false);
     },
     onRecordingFinished: () => {
       console.log('🛑 Recording ended');
@@ -53,13 +48,6 @@ export default function App() {
     },
     onBroadcastModalDismissed: () => {
       console.log('📱 Modal dismissed');
-      // User either tapped Start Broadcast or cancelled
-      // Show "Starting..." and wait for recording to actually start
-      setIsStarting(true);
-      // If recording doesn't start within 5 seconds, assume cancelled
-      setTimeout(() => {
-        setIsStarting(false);
-      }, 5000);
     },
   });
 
@@ -120,7 +108,6 @@ export default function App() {
       onRecordingError: (error) => {
         console.error('❌ Global recording error:', error);
         Alert.alert('Recording Error', error.message);
-        setIsStarting(false);
       },
     });
   };
@@ -230,14 +217,7 @@ export default function App() {
 
         {/* Recording Controls */}
         <View style={styles.buttonRow}>
-          {isStarting ? (
-            <View style={[styles.button, styles.loadingButton]}>
-              <ActivityIndicator color="#fff" size="small" />
-              <Text style={[styles.buttonText, { marginLeft: 8 }]}>
-                Starting...
-              </Text>
-            </View>
-          ) : !isRecording ? (
+          {!isRecording ? (
             <TouchableOpacity
               style={[styles.button, styles.startButton]}
               onPress={handleStartGlobalRecording}
@@ -291,9 +271,7 @@ export default function App() {
               {extensionStatus.state === 'running' ||
               extensionStatus.state === 'capturingChunk'
                 ? '🟢 Recording'
-                : extensionStatus.state === 'starting'
-                  ? '🟡 Starting...'
-                  : '⚪ Idle'}
+                : '⚪ Idle'}
             </Text>
             <Text style={styles.statusText}>
               Mic: {extensionStatus.isMicrophoneEnabled ? '🎤' : '🔇'}
@@ -483,12 +461,6 @@ const styles = StyleSheet.create({
   },
   stopButton: {
     backgroundColor: '#FF3B30',
-  },
-  loadingButton: {
-    backgroundColor: '#FF9500',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   clearButton: {
     backgroundColor: '#48484A',

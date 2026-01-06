@@ -32,6 +32,7 @@ public protocol HybridNitroScreenRecorderSpec_protocol: HybridObject {
   func finalizeChunk(settledTimeMs: Double) throws -> Promise<ScreenRecordingFile?>
   func retrieveLastGlobalRecording() throws -> ScreenRecordingFile?
   func getExtensionStatus() throws -> RawExtensionStatus
+  func isScreenBeingRecorded() throws -> Bool
   func clearRecordingCache() throws -> Void
 }
 

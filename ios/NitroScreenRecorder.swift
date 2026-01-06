@@ -602,7 +602,11 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
   // the system error
   func stopGlobalRecording(settledTimeMs: Double) throws -> Promise<ScreenRecordingFile?> {
     return Promise.async {
-      guard self.isGlobalRecordingActive else {
+      // Check both our local flag AND the system's isCaptured state
+      // This handles the case where the app was refreshed during recording
+      let isScreenCaptured = await MainActor.run { UIScreen.main.isCaptured }
+
+      guard self.isGlobalRecordingActive || isScreenCaptured else {
         print("⚠️ stopGlobalRecording called but no active global recording.")
         do {
           return try self.retrieveLastGlobalRecording()
@@ -645,7 +649,9 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
    Use this to indicate "I care about content starting NOW".
    */
   func markChunkStart() throws {
-    guard isGlobalRecordingActive else {
+    // Check both our local flag AND the system's isCaptured state
+    // This handles the case where the app was refreshed during recording
+    guard isGlobalRecordingActive || UIScreen.main.isCaptured else {
       print("⚠️ markChunkStart called but no active global recording.")
       return
     }
@@ -668,7 +674,11 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
    */
   func finalizeChunk(settledTimeMs: Double) throws -> Promise<ScreenRecordingFile?> {
     return Promise.async {
-      guard self.isGlobalRecordingActive else {
+      // Check both our local flag AND the system's isCaptured state
+      // This handles the case where the app was refreshed during recording
+      let isScreenCaptured = await MainActor.run { UIScreen.main.isCaptured }
+
+      guard self.isGlobalRecordingActive || isScreenCaptured else {
         print("⚠️ finalizeChunk called but no active global recording.")
         return nil
       }
@@ -918,38 +928,28 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
       let defaults = UserDefaults(suiteName: appGroupId)
     else {
       return RawExtensionStatus(
-        isBroadcasting: false,
-        isExtensionRunning: false,
         isMicrophoneEnabled: false,
         isCapturingChunk: false,
-        lastHeartbeat: 0,
         chunkStartedAt: 0
       )
     }
 
-    let lastHeartbeat = defaults.double(forKey: "ExtensionHeartbeat")
-    let currentTime = Date().timeIntervalSince1970
-
-    // Extension is considered running if heartbeat was within last 5 seconds
-    // (using generous threshold due to cross-process UserDefaults sync delays)
-    let isExtensionRunning = lastHeartbeat > 0 && (currentTime - lastHeartbeat) < 5.0
-
-    // isBroadcasting is true if:
-    // 1. UserDefaults says it's active, AND
-    // 2. Either isExtensionRunning is true, OR we haven't received any heartbeat yet (still initializing)
-    let rawBroadcastActive = defaults.bool(forKey: "ExtensionBroadcastActive")
-    let isBroadcasting = rawBroadcastActive && (isExtensionRunning || lastHeartbeat == 0)
     let isMicrophoneEnabled = defaults.bool(forKey: "ExtensionMicActive")
     let isCapturingChunk = defaults.bool(forKey: "ExtensionCapturing")
     let chunkStartedAt = defaults.double(forKey: "ExtensionChunkStartedAt")
 
     return RawExtensionStatus(
-      isBroadcasting: isBroadcasting,
-      isExtensionRunning: isExtensionRunning,
       isMicrophoneEnabled: isMicrophoneEnabled,
       isCapturingChunk: isCapturingChunk,
-      lastHeartbeat: lastHeartbeat,
       chunkStartedAt: chunkStartedAt
     )
+  }
+
+  /**
+   Returns whether the screen is currently being recorded.
+   Uses UIScreen.main.isCaptured which is instant and reliable.
+   */
+  func isScreenBeingRecorded() throws -> Bool {
+    return UIScreen.main.isCaptured
   }
 }

@@ -71,6 +71,7 @@ namespace margelo::nitro::nitroscreenrecorder {
     std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> finalizeChunk(double settledTimeMs) override;
     std::optional<ScreenRecordingFile> retrieveLastGlobalRecording() override;
     RawExtensionStatus getExtensionStatus() override;
+    bool isScreenBeingRecorded() override;
     void clearRecordingCache() override;
 
   private:

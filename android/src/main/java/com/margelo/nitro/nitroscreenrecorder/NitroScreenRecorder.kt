@@ -404,4 +404,33 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
     lastGlobalRecording = null
     lastGlobalAudioRecording = null
   }
+
+  // --- Chunking (iOS-only, no-op on Android) ---
+
+  override fun markChunkStart() {
+    // No-op on Android - chunking is iOS-only
+  }
+
+  override fun finalizeChunk(settledTimeMs: Double): Promise<ScreenRecordingFile?> {
+    return Promise.async {
+      // No-op on Android - chunking is iOS-only
+      return@async null
+    }
+  }
+
+  // --- Extension Status (iOS-only, return defaults on Android) ---
+
+  override fun getExtensionStatus(): RawExtensionStatus {
+    // Extension status is iOS-only concept
+    return RawExtensionStatus(
+      isMicrophoneEnabled = false,
+      isCapturingChunk = false,
+      chunkStartedAt = 0.0
+    )
+  }
+
+  override fun isScreenBeingRecorded(): Boolean {
+    // On Android, check if our service is currently recording
+    return globalRecordingService?.isCurrentlyRecording() == true
+  }
 }

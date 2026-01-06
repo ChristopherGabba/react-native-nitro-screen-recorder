@@ -19,19 +19,10 @@ import com.facebook.proguard.annotations.DoNotStrip
 data class RawExtensionStatus(
   @DoNotStrip
   @Keep
-  val isBroadcasting: Boolean,
-  @DoNotStrip
-  @Keep
-  val isExtensionRunning: Boolean,
-  @DoNotStrip
-  @Keep
   val isMicrophoneEnabled: Boolean,
   @DoNotStrip
   @Keep
   val isCapturingChunk: Boolean,
-  @DoNotStrip
-  @Keep
-  val lastHeartbeat: Double,
   @DoNotStrip
   @Keep
   val chunkStartedAt: Double
@@ -46,8 +37,8 @@ data class RawExtensionStatus(
     @Keep
     @Suppress("unused")
     @JvmStatic
-    private fun fromCpp(isBroadcasting: Boolean, isExtensionRunning: Boolean, isMicrophoneEnabled: Boolean, isCapturingChunk: Boolean, lastHeartbeat: Double, chunkStartedAt: Double): RawExtensionStatus {
-      return RawExtensionStatus(isBroadcasting, isExtensionRunning, isMicrophoneEnabled, isCapturingChunk, lastHeartbeat, chunkStartedAt)
+    private fun fromCpp(isMicrophoneEnabled: Boolean, isCapturingChunk: Boolean, chunkStartedAt: Double): RawExtensionStatus {
+      return RawExtensionStatus(isMicrophoneEnabled, isCapturingChunk, chunkStartedAt)
     }
   }
 }

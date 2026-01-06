@@ -402,5 +402,14 @@ namespace margelo::nitro::nitroscreenrecorder::bridge::swift {
   inline Result_RawExtensionStatus_ create_Result_RawExtensionStatus_(const std::exception_ptr& error) noexcept {
     return Result<RawExtensionStatus>::withError(error);
   }
+  
+  // pragma MARK: Result<bool>
+  using Result_bool_ = Result<bool>;
+  inline Result_bool_ create_Result_bool_(bool value) noexcept {
+    return Result<bool>::withValue(std::move(value));
+  }
+  inline Result_bool_ create_Result_bool_(const std::exception_ptr& error) noexcept {
+    return Result<bool>::withError(error);
+  }
 
 } // namespace margelo::nitro::nitroscreenrecorder::bridge::swift

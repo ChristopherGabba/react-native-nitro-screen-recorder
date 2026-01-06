@@ -34,16 +34,13 @@ namespace margelo::nitro::nitroscreenrecorder {
    */
   struct RawExtensionStatus {
   public:
-    bool isBroadcasting     SWIFT_PRIVATE;
-    bool isExtensionRunning     SWIFT_PRIVATE;
     bool isMicrophoneEnabled     SWIFT_PRIVATE;
     bool isCapturingChunk     SWIFT_PRIVATE;
-    double lastHeartbeat     SWIFT_PRIVATE;
     double chunkStartedAt     SWIFT_PRIVATE;
 
   public:
     RawExtensionStatus() = default;
-    explicit RawExtensionStatus(bool isBroadcasting, bool isExtensionRunning, bool isMicrophoneEnabled, bool isCapturingChunk, double lastHeartbeat, double chunkStartedAt): isBroadcasting(isBroadcasting), isExtensionRunning(isExtensionRunning), isMicrophoneEnabled(isMicrophoneEnabled), isCapturingChunk(isCapturingChunk), lastHeartbeat(lastHeartbeat), chunkStartedAt(chunkStartedAt) {}
+    explicit RawExtensionStatus(bool isMicrophoneEnabled, bool isCapturingChunk, double chunkStartedAt): isMicrophoneEnabled(isMicrophoneEnabled), isCapturingChunk(isCapturingChunk), chunkStartedAt(chunkStartedAt) {}
   };
 
 } // namespace margelo::nitro::nitroscreenrecorder
@@ -56,21 +53,15 @@ namespace margelo::nitro {
     static inline margelo::nitro::nitroscreenrecorder::RawExtensionStatus fromJSI(jsi::Runtime& runtime, const jsi::Value& arg) {
       jsi::Object obj = arg.asObject(runtime);
       return margelo::nitro::nitroscreenrecorder::RawExtensionStatus(
-        JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, "isBroadcasting")),
-        JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, "isExtensionRunning")),
         JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, "isMicrophoneEnabled")),
         JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, "isCapturingChunk")),
-        JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, "lastHeartbeat")),
         JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, "chunkStartedAt"))
       );
     }
     static inline jsi::Value toJSI(jsi::Runtime& runtime, const margelo::nitro::nitroscreenrecorder::RawExtensionStatus& arg) {
       jsi::Object obj(runtime);
-      obj.setProperty(runtime, "isBroadcasting", JSIConverter<bool>::toJSI(runtime, arg.isBroadcasting));
-      obj.setProperty(runtime, "isExtensionRunning", JSIConverter<bool>::toJSI(runtime, arg.isExtensionRunning));
       obj.setProperty(runtime, "isMicrophoneEnabled", JSIConverter<bool>::toJSI(runtime, arg.isMicrophoneEnabled));
       obj.setProperty(runtime, "isCapturingChunk", JSIConverter<bool>::toJSI(runtime, arg.isCapturingChunk));
-      obj.setProperty(runtime, "lastHeartbeat", JSIConverter<double>::toJSI(runtime, arg.lastHeartbeat));
       obj.setProperty(runtime, "chunkStartedAt", JSIConverter<double>::toJSI(runtime, arg.chunkStartedAt));
       return obj;
     }
@@ -82,11 +73,8 @@ namespace margelo::nitro {
       if (!nitro::isPlainObject(runtime, obj)) {
         return false;
       }
-      if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, "isBroadcasting"))) return false;
-      if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, "isExtensionRunning"))) return false;
       if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, "isMicrophoneEnabled"))) return false;
       if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, "isCapturingChunk"))) return false;
-      if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, "lastHeartbeat"))) return false;
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, "chunkStartedAt"))) return false;
       return true;
     }

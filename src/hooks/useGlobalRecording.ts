@@ -4,8 +4,13 @@ import {
   addScreenRecordingListener,
   retrieveLastGlobalRecording,
   getExtensionStatus,
+  isScreenBeingRecorded,
 } from '../functions';
-import type { ScreenRecordingFile, ExtensionStatus } from '../types';
+import type {
+  ScreenRecordingFile,
+  ExtensionStatus,
+  ExtensionState,
+} from '../types';
 
 /**
  * A "modern" sleep statement.
@@ -20,11 +25,8 @@ const delay = (ms: number) =>
  */
 const IDLE_STATUS: ExtensionStatus = {
   state: 'idle',
-  isBroadcasting: false,
-  isExtensionRunning: false,
   isMicrophoneEnabled: false,
   isCapturingChunk: false,
-  lastHeartbeat: 0,
   chunkStartedAt: 0,
 };
 
@@ -143,10 +145,10 @@ export const useGlobalRecording = (
   const [extensionStatus, setExtensionStatus] =
     useState<ExtensionStatus>(IDLE_STATUS);
 
-  // Use ref to track if we should keep polling (avoids stale closure issues)
-  const shouldPollRef = useRef(false);
+  // Track previous recording state to detect transitions
+  const wasRecordingRef = useRef(false);
 
-  // Screen recording listener
+  // Screen recording listener - primary source for callbacks
   useEffect(() => {
     const unsubscribe = addScreenRecordingListener({
       ignoreRecordingsInitiatedElsewhere:
@@ -184,38 +186,40 @@ export const useGlobalRecording = (
     return unsubscribe;
   }, [props]);
 
-  // Extension status polling - only poll while recording or extension is active
+  // Polling for isRecording (using isCaptured) and extensionStatus
   useEffect(() => {
-    const shouldPoll = isRecording || extensionStatus.isExtensionRunning;
-
-    shouldPollRef.current = shouldPoll;
-
-    if (!shouldPoll) {
-      // Reset to idle when nothing is happening
-      if (extensionStatus.state !== 'idle') {
-        setExtensionStatus(IDLE_STATUS);
-      }
-      return;
-    }
-
     const pollingInterval = props?.pollingIntervalMs ?? 200;
 
     const pollStatus = () => {
-      if (!shouldPollRef.current) return;
-      const status = getExtensionStatus();
-      setExtensionStatus(status);
+      // Use isCaptured for reliable isRecording detection
+      const currentlyRecording = isScreenBeingRecorded();
+
+      // Detect transitions for app refresh case (when event listener missed the start)
+      if (currentlyRecording && !wasRecordingRef.current) {
+        setIsRecording(true);
+      } else if (!currentlyRecording && wasRecordingRef.current) {
+        setIsRecording(false);
+      }
+      wasRecordingRef.current = currentlyRecording;
+
+      // Get extension status for detailed info (chunk status, mic, etc.)
+      const rawStatus = getExtensionStatus();
+
+      // Derive state from isRecording (reliable)
+      const state: ExtensionState = !currentlyRecording
+        ? 'idle'
+        : rawStatus.isCapturingChunk
+          ? 'capturingChunk'
+          : 'running';
+
+      setExtensionStatus({ ...rawStatus, state });
     };
 
-    pollStatus(); // Poll immediately
+    pollStatus(); // Poll immediately on mount
     const interval = setInterval(pollStatus, pollingInterval);
 
     return () => clearInterval(interval);
-  }, [
-    isRecording,
-    extensionStatus.isExtensionRunning,
-    extensionStatus.state,
-    props?.pollingIntervalMs,
-  ]);
+  }, [props?.pollingIntervalMs]);
 
   return { isRecording, extensionStatus };
 };

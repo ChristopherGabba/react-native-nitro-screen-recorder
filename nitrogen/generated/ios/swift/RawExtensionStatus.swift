@@ -18,32 +18,10 @@ public extension RawExtensionStatus {
   /**
    * Create a new instance of `RawExtensionStatus`.
    */
-  init(isBroadcasting: Bool, isExtensionRunning: Bool, isMicrophoneEnabled: Bool, isCapturingChunk: Bool, lastHeartbeat: Double, chunkStartedAt: Double) {
-    self.init(isBroadcasting, isExtensionRunning, isMicrophoneEnabled, isCapturingChunk, lastHeartbeat, chunkStartedAt)
+  init(isMicrophoneEnabled: Bool, isCapturingChunk: Bool, chunkStartedAt: Double) {
+    self.init(isMicrophoneEnabled, isCapturingChunk, chunkStartedAt)
   }
 
-  var isBroadcasting: Bool {
-    @inline(__always)
-    get {
-      return self.__isBroadcasting
-    }
-    @inline(__always)
-    set {
-      self.__isBroadcasting = newValue
-    }
-  }
-  
-  var isExtensionRunning: Bool {
-    @inline(__always)
-    get {
-      return self.__isExtensionRunning
-    }
-    @inline(__always)
-    set {
-      self.__isExtensionRunning = newValue
-    }
-  }
-  
   var isMicrophoneEnabled: Bool {
     @inline(__always)
     get {
@@ -63,17 +41,6 @@ public extension RawExtensionStatus {
     @inline(__always)
     set {
       self.__isCapturingChunk = newValue
-    }
-  }
-  
-  var lastHeartbeat: Double {
-    @inline(__always)
-    get {
-      return self.__lastHeartbeat
-    }
-    @inline(__always)
-    set {
-      self.__lastHeartbeat = newValue
     }
   }
   

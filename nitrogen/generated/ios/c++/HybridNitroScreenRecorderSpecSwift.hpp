@@ -224,6 +224,14 @@ namespace margelo::nitro::nitroscreenrecorder {
       auto __value = std::move(__result.value());
       return __value;
     }
+    inline bool isScreenBeingRecorded() override {
+      auto __result = _swiftPart.isScreenBeingRecorded();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
     inline void clearRecordingCache() override {
       auto __result = _swiftPart.clearRecordingCache();
       if (__result.hasError()) [[unlikely]] {

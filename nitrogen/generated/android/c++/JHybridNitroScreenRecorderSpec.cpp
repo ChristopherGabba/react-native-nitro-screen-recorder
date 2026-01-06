@@ -243,6 +243,11 @@ namespace margelo::nitro::nitroscreenrecorder {
     auto __result = method(_javaPart);
     return __result->toCpp();
   }
+  bool JHybridNitroScreenRecorderSpec::isScreenBeingRecorded() {
+    static const auto method = javaClassStatic()->getMethod<jboolean()>("isScreenBeingRecorded");
+    auto __result = method(_javaPart);
+    return static_cast<bool>(__result);
+  }
   void JHybridNitroScreenRecorderSpec::clearRecordingCache() {
     static const auto method = javaClassStatic()->getMethod<void()>("clearRecordingCache");
     method(_javaPart);

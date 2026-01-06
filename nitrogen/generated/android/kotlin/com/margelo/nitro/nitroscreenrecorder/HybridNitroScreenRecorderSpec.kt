@@ -136,6 +136,10 @@ abstract class HybridNitroScreenRecorderSpec: HybridObject() {
   
   @DoNotStrip
   @Keep
+  abstract fun isScreenBeingRecorded(): Boolean
+  
+  @DoNotStrip
+  @Keep
   abstract fun clearRecordingCache(): Unit
 
   private external fun initHybrid(): HybridData

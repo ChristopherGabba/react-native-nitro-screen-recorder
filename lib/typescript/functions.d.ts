@@ -1,4 +1,4 @@
-import type { ScreenRecordingFile, PermissionResponse, InAppRecordingInput, ScreenRecordingEvent, PermissionStatus, GlobalRecordingInput, BroadcastPickerPresentationEvent, ExtensionStatus } from './types';
+import type { ScreenRecordingFile, PermissionResponse, InAppRecordingInput, ScreenRecordingEvent, PermissionStatus, GlobalRecordingInput, BroadcastPickerPresentationEvent, RawExtensionStatus } from './types';
 /**
  * Gets the current camera permission status without requesting permission.
  *
@@ -255,30 +255,34 @@ export declare function addScreenRecordingListener({ listener, ignoreRecordingsI
 export declare function addBroadcastPickerListener(listener: (event: BroadcastPickerPresentationEvent) => void): () => void;
 /**
  * Gets the current status of the broadcast extension.
- * Useful for monitoring if the extension is alive and processing buffers.
+ * Returns mic status, chunk status, and chunk start time.
+ * Note: `state` is derived in the useGlobalRecording hook using isRecording.
  *
  * @platform iOS-only
- * @returns ExtensionStatus object with state, isBroadcasting, isExtensionRunning, isMicrophoneEnabled, isCapturingChunk, lastHeartbeat, and chunkStartedAt
+ * @returns RawExtensionStatus with isMicrophoneEnabled, isCapturingChunk, and chunkStartedAt
  * @example
  * ```typescript
  * const status = getExtensionStatus();
- * switch (status.state) {
- *   case 'idle':
- *     console.log('Not recording');
- *     break;
- *   case 'starting':
- *     console.log('Starting up...');
- *     break;
- *   case 'running':
- *     console.log('Recording!', status.isMicrophoneEnabled ? 'with mic' : 'no mic');
- *     break;
- *   case 'capturingChunk':
- *     console.log('Capturing chunk for', Date.now()/1000 - status.chunkStartedAt, 'seconds');
- *     break;
+ * console.log('Mic enabled:', status.isMicrophoneEnabled);
+ * console.log('Capturing chunk:', status.isCapturingChunk);
+ * ```
+ */
+export declare function getExtensionStatus(): RawExtensionStatus;
+/**
+ * Returns whether the screen is currently being recorded.
+ * Uses UIScreen.main.isCaptured on iOS which is instant and reliable.
+ *
+ * @platform iOS, Android
+ * @returns true if screen is being recorded, false otherwise
+ * @example
+ * ```typescript
+ * const isRecording = isScreenBeingRecorded();
+ * if (isRecording) {
+ *   console.log('Screen is being recorded!');
  * }
  * ```
  */
-export declare function getExtensionStatus(): ExtensionStatus;
+export declare function isScreenBeingRecorded(): boolean;
 /**
  * Clears all cached recording files to free up storage space.
  * This will delete temporary files but not files that have been explicitly saved.

@@ -361,27 +361,20 @@ export type BroadcastPickerPresentationEvent = 'showing' | 'dismissed';
  *
  * @platform ios-only
  * - `'idle'` - Broadcast not started
- * - `'starting'` - User started broadcast, extension not yet running
  * - `'running'` - Extension is running and processing frames
  * - `'capturingChunk'` - Extension is running and actively capturing a chunk
  */
-export type ExtensionState = 'idle' | 'starting' | 'running' | 'capturingChunk';
+export type ExtensionState = 'idle' | 'running' | 'capturingChunk';
 
 /**
  * Raw status from the native broadcast extension (without derived state).
  * @internal Used by the native bridge - use ExtensionStatus instead.
  */
 export interface RawExtensionStatus {
-  /** Whether the user has started the broadcast */
-  isBroadcasting: boolean;
-  /** Whether the extension process is alive and processing frames */
-  isExtensionRunning: boolean;
   /** Whether microphone audio is being received */
   isMicrophoneEnabled: boolean;
   /** Whether actively capturing a chunk (after markChunkStart, before finalizeChunk) */
   isCapturingChunk: boolean;
-  /** Unix timestamp (seconds) of the last heartbeat, or 0 if none */
-  lastHeartbeat: number;
   /** Unix timestamp (seconds) when the current chunk started, or 0 if not capturing */
   chunkStartedAt: number;
 }
@@ -397,9 +390,6 @@ export interface RawExtensionStatus {
  * switch (status.state) {
  *   case 'idle':
  *     console.log('Not recording');
- *     break;
- *   case 'starting':
- *     console.log('Starting up...');
  *     break;
  *   case 'running':
  *     console.log('Recording!', status.isMicrophoneEnabled ? 'with mic' : 'no mic');

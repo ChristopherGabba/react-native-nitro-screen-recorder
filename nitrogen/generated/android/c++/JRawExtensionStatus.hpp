@@ -31,24 +31,15 @@ namespace margelo::nitro::nitroscreenrecorder {
     [[nodiscard]]
     RawExtensionStatus toCpp() const {
       static const auto clazz = javaClassStatic();
-      static const auto fieldIsBroadcasting = clazz->getField<jboolean>("isBroadcasting");
-      jboolean isBroadcasting = this->getFieldValue(fieldIsBroadcasting);
-      static const auto fieldIsExtensionRunning = clazz->getField<jboolean>("isExtensionRunning");
-      jboolean isExtensionRunning = this->getFieldValue(fieldIsExtensionRunning);
       static const auto fieldIsMicrophoneEnabled = clazz->getField<jboolean>("isMicrophoneEnabled");
       jboolean isMicrophoneEnabled = this->getFieldValue(fieldIsMicrophoneEnabled);
       static const auto fieldIsCapturingChunk = clazz->getField<jboolean>("isCapturingChunk");
       jboolean isCapturingChunk = this->getFieldValue(fieldIsCapturingChunk);
-      static const auto fieldLastHeartbeat = clazz->getField<double>("lastHeartbeat");
-      double lastHeartbeat = this->getFieldValue(fieldLastHeartbeat);
       static const auto fieldChunkStartedAt = clazz->getField<double>("chunkStartedAt");
       double chunkStartedAt = this->getFieldValue(fieldChunkStartedAt);
       return RawExtensionStatus(
-        static_cast<bool>(isBroadcasting),
-        static_cast<bool>(isExtensionRunning),
         static_cast<bool>(isMicrophoneEnabled),
         static_cast<bool>(isCapturingChunk),
-        lastHeartbeat,
         chunkStartedAt
       );
     }
@@ -59,16 +50,13 @@ namespace margelo::nitro::nitroscreenrecorder {
      */
     [[maybe_unused]]
     static jni::local_ref<JRawExtensionStatus::javaobject> fromCpp(const RawExtensionStatus& value) {
-      using JSignature = JRawExtensionStatus(jboolean, jboolean, jboolean, jboolean, double, double);
+      using JSignature = JRawExtensionStatus(jboolean, jboolean, double);
       static const auto clazz = javaClassStatic();
       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
       return create(
         clazz,
-        value.isBroadcasting,
-        value.isExtensionRunning,
         value.isMicrophoneEnabled,
         value.isCapturingChunk,
-        value.lastHeartbeat,
         value.chunkStartedAt
       );
     }

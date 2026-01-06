@@ -30,6 +30,7 @@ export interface NitroScreenRecorder extends HybridObject<{
     finalizeChunk(settledTimeMs: number): Promise<ScreenRecordingFile | undefined>;
     retrieveLastGlobalRecording(): ScreenRecordingFile | undefined;
     getExtensionStatus(): RawExtensionStatus;
+    isScreenBeingRecorded(): boolean;
     clearRecordingCache(): void;
 }
 //# sourceMappingURL=NitroScreenRecorder.nitro.d.ts.map
