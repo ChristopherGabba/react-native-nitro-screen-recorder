@@ -23,9 +23,10 @@
 #error NitroModules cannot be found! Are you sure you installed NitroModules properly?
 #endif
 
+// Forward declaration of `CaptureMode` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { enum class CaptureMode; }
 
-
-
+#include "CaptureMode.hpp"
 
 namespace margelo::nitro::nitroscreenrecorder {
 
@@ -37,10 +38,11 @@ namespace margelo::nitro::nitroscreenrecorder {
     bool isMicrophoneEnabled     SWIFT_PRIVATE;
     bool isCapturingChunk     SWIFT_PRIVATE;
     double chunkStartedAt     SWIFT_PRIVATE;
+    CaptureMode captureMode     SWIFT_PRIVATE;
 
   public:
     RawExtensionStatus() = default;
-    explicit RawExtensionStatus(bool isMicrophoneEnabled, bool isCapturingChunk, double chunkStartedAt): isMicrophoneEnabled(isMicrophoneEnabled), isCapturingChunk(isCapturingChunk), chunkStartedAt(chunkStartedAt) {}
+    explicit RawExtensionStatus(bool isMicrophoneEnabled, bool isCapturingChunk, double chunkStartedAt, CaptureMode captureMode): isMicrophoneEnabled(isMicrophoneEnabled), isCapturingChunk(isCapturingChunk), chunkStartedAt(chunkStartedAt), captureMode(captureMode) {}
   };
 
 } // namespace margelo::nitro::nitroscreenrecorder
@@ -55,7 +57,8 @@ namespace margelo::nitro {
       return margelo::nitro::nitroscreenrecorder::RawExtensionStatus(
         JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, "isMicrophoneEnabled")),
         JSIConverter<bool>::fromJSI(runtime, obj.getProperty(runtime, "isCapturingChunk")),
-        JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, "chunkStartedAt"))
+        JSIConverter<double>::fromJSI(runtime, obj.getProperty(runtime, "chunkStartedAt")),
+        JSIConverter<margelo::nitro::nitroscreenrecorder::CaptureMode>::fromJSI(runtime, obj.getProperty(runtime, "captureMode"))
       );
     }
     static inline jsi::Value toJSI(jsi::Runtime& runtime, const margelo::nitro::nitroscreenrecorder::RawExtensionStatus& arg) {
@@ -63,6 +66,7 @@ namespace margelo::nitro {
       obj.setProperty(runtime, "isMicrophoneEnabled", JSIConverter<bool>::toJSI(runtime, arg.isMicrophoneEnabled));
       obj.setProperty(runtime, "isCapturingChunk", JSIConverter<bool>::toJSI(runtime, arg.isCapturingChunk));
       obj.setProperty(runtime, "chunkStartedAt", JSIConverter<double>::toJSI(runtime, arg.chunkStartedAt));
+      obj.setProperty(runtime, "captureMode", JSIConverter<margelo::nitro::nitroscreenrecorder::CaptureMode>::toJSI(runtime, arg.captureMode));
       return obj;
     }
     static inline bool canConvert(jsi::Runtime& runtime, const jsi::Value& value) {
@@ -76,6 +80,7 @@ namespace margelo::nitro {
       if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, "isMicrophoneEnabled"))) return false;
       if (!JSIConverter<bool>::canConvert(runtime, obj.getProperty(runtime, "isCapturingChunk"))) return false;
       if (!JSIConverter<double>::canConvert(runtime, obj.getProperty(runtime, "chunkStartedAt"))) return false;
+      if (!JSIConverter<margelo::nitro::nitroscreenrecorder::CaptureMode>::canConvert(runtime, obj.getProperty(runtime, "captureMode"))) return false;
       return true;
     }
   };

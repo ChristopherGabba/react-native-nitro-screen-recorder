@@ -930,7 +930,8 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
       return RawExtensionStatus(
         isMicrophoneEnabled: false,
         isCapturingChunk: false,
-        chunkStartedAt: 0
+        chunkStartedAt: 0,
+        captureMode: .entirescreen  // iOS always captures entire screen
       )
     }
 
@@ -941,7 +942,8 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     return RawExtensionStatus(
       isMicrophoneEnabled: isMicrophoneEnabled,
       isCapturingChunk: isCapturingChunk,
-      chunkStartedAt: chunkStartedAt
+      chunkStartedAt: chunkStartedAt,
+      captureMode: .entirescreen  // iOS always captures entire screen
     )
   }
 

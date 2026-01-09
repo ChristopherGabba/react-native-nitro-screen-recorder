@@ -18,8 +18,8 @@ public extension RawExtensionStatus {
   /**
    * Create a new instance of `RawExtensionStatus`.
    */
-  init(isMicrophoneEnabled: Bool, isCapturingChunk: Bool, chunkStartedAt: Double) {
-    self.init(isMicrophoneEnabled, isCapturingChunk, chunkStartedAt)
+  init(isMicrophoneEnabled: Bool, isCapturingChunk: Bool, chunkStartedAt: Double, captureMode: CaptureMode) {
+    self.init(isMicrophoneEnabled, isCapturingChunk, chunkStartedAt, captureMode)
   }
 
   var isMicrophoneEnabled: Bool {
@@ -52,6 +52,17 @@ public extension RawExtensionStatus {
     @inline(__always)
     set {
       self.__chunkStartedAt = newValue
+    }
+  }
+  
+  var captureMode: CaptureMode {
+    @inline(__always)
+    get {
+      return self.__captureMode
+    }
+    @inline(__always)
+    set {
+      self.__captureMode = newValue
     }
   }
 }

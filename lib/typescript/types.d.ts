@@ -340,6 +340,17 @@ export interface ScreenRecordingEvent {
  */
 export type BroadcastPickerPresentationEvent = 'showing' | 'dismissed';
 /**
+ * Indicates what the user selected when starting screen recording.
+ * @platform Android 14+ (API 34+) - on earlier versions or iOS, always 'unknown'
+ *
+ * @example
+ * ```typescript
+ * const mode: CaptureMode = 'entireScreen'; // User chose to record entire screen
+ * const appMode: CaptureMode = 'singleApp'; // User chose to record a single app
+ * ```
+ */
+export type CaptureMode = 'entireScreen' | 'singleApp' | 'unknown';
+/**
  * High-level state of the broadcast extension for easy UI rendering.
  *
  * @platform ios-only
@@ -359,6 +370,11 @@ export interface RawExtensionStatus {
     isCapturingChunk: boolean;
     /** Unix timestamp (seconds) when the current chunk started, or 0 if not capturing */
     chunkStartedAt: number;
+    /**
+     * What the user selected in the permission dialog.
+     * @platform Android 14+ (API 34+) - on earlier versions or iOS, always 'unknown'
+     */
+    captureMode: CaptureMode;
 }
 /**
  * Status information from the broadcast extension.

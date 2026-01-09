@@ -286,6 +286,19 @@ export default function App() {
             </Text>
             <Text style={styles.statusText}>Total: {chunks.length}</Text>
           </View>
+          {/* Capture Mode - Android 14+ only */}
+          {Platform.OS === 'android' && isRecording && (
+            <View style={styles.statusRow}>
+              <Text style={styles.statusText}>
+                Capture Mode:{' '}
+                {extensionStatus.captureMode === 'entireScreen'
+                  ? '📺 Entire Screen'
+                  : extensionStatus.captureMode === 'singleApp'
+                    ? '📱 Single App'
+                    : '❓ Unknown'}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Chunks List */}

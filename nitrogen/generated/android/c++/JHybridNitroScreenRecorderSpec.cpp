@@ -17,6 +17,8 @@ namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingFile; }
 namespace margelo::nitro::nitroscreenrecorder { struct AudioRecordingFile; }
 // Forward declaration of `RawExtensionStatus` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct RawExtensionStatus; }
+// Forward declaration of `CaptureMode` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { enum class CaptureMode; }
 // Forward declaration of `ScreenRecordingEvent` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingEvent; }
 // Forward declaration of `RecordingEventType` to properly resolve imports.
@@ -46,6 +48,8 @@ namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 #include "JAudioRecordingFile.hpp"
 #include "RawExtensionStatus.hpp"
 #include "JRawExtensionStatus.hpp"
+#include "CaptureMode.hpp"
+#include "JCaptureMode.hpp"
 #include "ScreenRecordingEvent.hpp"
 #include <functional>
 #include "JFunc_void_ScreenRecordingEvent.hpp"

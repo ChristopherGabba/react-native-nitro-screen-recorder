@@ -343,8 +343,11 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
     return Promise.async {
       val ctx = NitroModules.applicationContext ?: return@async null
 
-      if (globalRecordingService?.isCurrentlyRecording() != true) {
-        Log.w(TAG, "No active recording to stop")
+      // Check if we have an active session (MediaProjection exists)
+      // This handles both active recording AND paused state (between chunks)
+      val service = globalRecordingService
+      if (service == null || !service.hasActiveSession()) {
+        Log.w(TAG, "No active recording session to stop")
         return@async null
       }
 
@@ -405,27 +408,64 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
     lastGlobalAudioRecording = null
   }
 
-  // --- Chunking (iOS-only, no-op on Android) ---
+  // --- Chunking ---
 
   override fun markChunkStart() {
-    // No-op on Android - chunking is iOS-only
+    Log.d(TAG, "📍 markChunkStart called")
+    globalRecordingService?.markChunkStart() ?: run {
+      Log.w(TAG, "⚠️ markChunkStart: Service not bound")
+    }
   }
 
   override fun finalizeChunk(settledTimeMs: Double): Promise<ScreenRecordingFile?> {
     return Promise.async {
-      // No-op on Android - chunking is iOS-only
-      return@async null
+      Log.d(TAG, "📦 finalizeChunk called with settledTimeMs=$settledTimeMs")
+      
+      val service = globalRecordingService
+      if (service == null) {
+        Log.w(TAG, "⚠️ finalizeChunk: Service not bound")
+        return@async null
+      }
+      
+      val chunkFile = service.finalizeChunk()
+      
+      if (chunkFile == null) {
+        Log.w(TAG, "⚠️ finalizeChunk: No chunk file returned")
+        return@async null
+      }
+      
+      // Wait for file to settle
+      delay(settledTimeMs.toLong())
+      
+      // Store as last recording for retrieval
+      lastGlobalRecording = chunkFile
+      
+      // Return the chunk file
+      return@async if (chunkFile.exists()) {
+        ScreenRecordingFile(
+          path = "file://${chunkFile.absolutePath}",
+          name = chunkFile.name,
+          size = chunkFile.length().toDouble(),
+          duration = RecorderUtils.getVideoDuration(chunkFile),
+          enabledMicrophone = service.isMicrophoneEnabled(),
+          audioFile = null,  // Chunks don't have separate audio for now
+          appAudioFile = null
+        )
+      } else {
+        null
+      }
     }
   }
 
-  // --- Extension Status (iOS-only, return defaults on Android) ---
+  // --- Extension Status ---
 
   override fun getExtensionStatus(): RawExtensionStatus {
-    // Extension status is iOS-only concept
+    val service = globalRecordingService
     return RawExtensionStatus(
-      isMicrophoneEnabled = false,
-      isCapturingChunk = false,
-      chunkStartedAt = 0.0
+      isMicrophoneEnabled = service?.isMicrophoneEnabled() ?: false,
+      isCapturingChunk = service?.isCapturingChunk() ?: false,
+      chunkStartedAt = service?.getChunkStartedAt() ?: 0.0,
+      captureMode = service?.getCaptureMode() ?: CaptureMode.UNKNOWN
     )
   }
 
