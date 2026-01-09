@@ -470,7 +470,8 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
   }
 
   override fun isScreenBeingRecorded(): Boolean {
-    // On Android, check if our service is currently recording
-    return globalRecordingService?.isCurrentlyRecording() == true
+    // On Android, check if we have an active recording session
+    // This returns true for both active recording AND paused state (between chunks)
+    return globalRecordingService?.hasActiveSession() == true
   }
 }
