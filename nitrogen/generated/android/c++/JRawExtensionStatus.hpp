@@ -10,7 +10,8 @@
 #include <fbjni/fbjni.h>
 #include "RawExtensionStatus.hpp"
 
-
+#include "CaptureMode.hpp"
+#include "JCaptureMode.hpp"
 
 namespace margelo::nitro::nitroscreenrecorder {
 
@@ -37,10 +38,13 @@ namespace margelo::nitro::nitroscreenrecorder {
       jboolean isCapturingChunk = this->getFieldValue(fieldIsCapturingChunk);
       static const auto fieldChunkStartedAt = clazz->getField<double>("chunkStartedAt");
       double chunkStartedAt = this->getFieldValue(fieldChunkStartedAt);
+      static const auto fieldCaptureMode = clazz->getField<JCaptureMode>("captureMode");
+      jni::local_ref<JCaptureMode> captureMode = this->getFieldValue(fieldCaptureMode);
       return RawExtensionStatus(
         static_cast<bool>(isMicrophoneEnabled),
         static_cast<bool>(isCapturingChunk),
-        chunkStartedAt
+        chunkStartedAt,
+        captureMode->toCpp()
       );
     }
 
@@ -50,14 +54,15 @@ namespace margelo::nitro::nitroscreenrecorder {
      */
     [[maybe_unused]]
     static jni::local_ref<JRawExtensionStatus::javaobject> fromCpp(const RawExtensionStatus& value) {
-      using JSignature = JRawExtensionStatus(jboolean, jboolean, double);
+      using JSignature = JRawExtensionStatus(jboolean, jboolean, double, jni::alias_ref<JCaptureMode>);
       static const auto clazz = javaClassStatic();
       static const auto create = clazz->getStaticMethod<JSignature>("fromCpp");
       return create(
         clazz,
         value.isMicrophoneEnabled,
         value.isCapturingChunk,
-        value.chunkStartedAt
+        value.chunkStartedAt,
+        JCaptureMode::fromCpp(value.captureMode)
       );
     }
   };

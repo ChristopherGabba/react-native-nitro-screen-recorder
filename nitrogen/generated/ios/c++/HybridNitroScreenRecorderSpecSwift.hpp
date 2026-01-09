@@ -36,6 +36,8 @@ namespace margelo::nitro::nitroscreenrecorder { struct AudioRecordingFile; }
 namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 // Forward declaration of `RawExtensionStatus` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { struct RawExtensionStatus; }
+// Forward declaration of `CaptureMode` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { enum class CaptureMode; }
 
 #include "PermissionStatus.hpp"
 #include "PermissionResponse.hpp"
@@ -53,6 +55,7 @@ namespace margelo::nitro::nitroscreenrecorder { struct RawExtensionStatus; }
 #include "AudioRecordingFile.hpp"
 #include "RecordingError.hpp"
 #include "RawExtensionStatus.hpp"
+#include "CaptureMode.hpp"
 
 #include "NitroScreenRecorder-Swift-Cxx-Umbrella.hpp"
 

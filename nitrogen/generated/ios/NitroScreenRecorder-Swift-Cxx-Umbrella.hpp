@@ -14,6 +14,8 @@ namespace margelo::nitro::nitroscreenrecorder { struct AudioRecordingFile; }
 namespace margelo::nitro::nitroscreenrecorder { enum class BroadcastPickerPresentationEvent; }
 // Forward declaration of `CameraDevice` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { enum class CameraDevice; }
+// Forward declaration of `CaptureMode` to properly resolve imports.
+namespace margelo::nitro::nitroscreenrecorder { enum class CaptureMode; }
 // Forward declaration of `HybridNitroScreenRecorderSpec` to properly resolve imports.
 namespace margelo::nitro::nitroscreenrecorder { class HybridNitroScreenRecorderSpec; }
 // Forward declaration of `PermissionResponse` to properly resolve imports.
@@ -39,6 +41,7 @@ namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingFile; }
 #include "AudioRecordingFile.hpp"
 #include "BroadcastPickerPresentationEvent.hpp"
 #include "CameraDevice.hpp"
+#include "CaptureMode.hpp"
 #include "HybridNitroScreenRecorderSpec.hpp"
 #include "PermissionResponse.hpp"
 #include "PermissionStatus.hpp"

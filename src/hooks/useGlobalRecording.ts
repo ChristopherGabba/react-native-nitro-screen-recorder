@@ -28,6 +28,7 @@ const IDLE_STATUS: ExtensionStatus = {
   isMicrophoneEnabled: false,
   isCapturingChunk: false,
   chunkStartedAt: 0,
+  captureMode: 'unknown',
 };
 
 /**

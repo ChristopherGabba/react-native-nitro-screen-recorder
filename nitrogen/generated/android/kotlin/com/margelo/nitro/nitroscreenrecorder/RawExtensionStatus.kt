@@ -25,7 +25,10 @@ data class RawExtensionStatus(
   val isCapturingChunk: Boolean,
   @DoNotStrip
   @Keep
-  val chunkStartedAt: Double
+  val chunkStartedAt: Double,
+  @DoNotStrip
+  @Keep
+  val captureMode: CaptureMode
 ) {
   /* primary constructor */
 
@@ -37,8 +40,8 @@ data class RawExtensionStatus(
     @Keep
     @Suppress("unused")
     @JvmStatic
-    private fun fromCpp(isMicrophoneEnabled: Boolean, isCapturingChunk: Boolean, chunkStartedAt: Double): RawExtensionStatus {
-      return RawExtensionStatus(isMicrophoneEnabled, isCapturingChunk, chunkStartedAt)
+    private fun fromCpp(isMicrophoneEnabled: Boolean, isCapturingChunk: Boolean, chunkStartedAt: Double, captureMode: CaptureMode): RawExtensionStatus {
+      return RawExtensionStatus(isMicrophoneEnabled, isCapturingChunk, chunkStartedAt, captureMode)
     }
   }
 }

@@ -273,7 +273,10 @@ export async function stopGlobalRecording(options?: {
  * Use this to indicate "I care about content starting NOW". Any previously recorded
  * but uncommitted content will be discarded.
  *
- * @platform iOS-only
+ * On Android, this uses a seamless recorder swap to prevent content loss at the start
+ * of the new chunk.
+ *
+ * @platform iOS, Android
  * @example
  * ```typescript
  * startGlobalRecording({ onRecordingError: console.error });
@@ -284,10 +287,6 @@ export async function stopGlobalRecording(options?: {
  * ```
  */
 export function markChunkStart(): void {
-  if (Platform.OS === 'android') {
-    console.warn('`markChunkStart` is only supported on iOS.');
-    return;
-  }
   return NitroScreenRecorderHybridObject.markChunkStart();
 }
 
@@ -297,7 +296,7 @@ export function markChunkStart(): void {
  *
  * Use this when you want to throw away recorded content without saving it.
  *
- * @platform iOS-only
+ * @platform iOS, Android
  * @example
  * ```typescript
  * markChunkStart(); // Start tracking
@@ -308,21 +307,18 @@ export function markChunkStart(): void {
  * ```
  */
 export function flushChunk(): void {
-  if (Platform.OS === 'android') {
-    console.warn('`flushChunk` is only supported on iOS.');
-    return;
-  }
   return NitroScreenRecorderHybridObject.markChunkStart();
 }
 
 /**
- * Finalizes the current recording chunk and returns it, then starts a new chunk.
- * The recording session continues uninterrupted.
+ * Finalizes the current recording chunk and returns it.
  *
- * Returns the video file containing content from the last markChunkStart() (or recording start)
- * until now. Recording continues in a new file after this call.
+ * Returns the video file containing content from the last markChunkStart() until now.
  *
- * @platform iOS-only
+ * **iOS behavior:** Recording continues in a new file after this call (uninterrupted).
+ * **Android behavior:** Recording pauses after this call. Call markChunkStart() to resume.
+ *
+ * @platform iOS, Android
  * @param options.settledTimeMs A "delay" time to wait before retrieving the file. Default = 500ms
  * @returns Promise resolving to the finalized chunk file
  * @example
@@ -332,7 +328,9 @@ export function flushChunk(): void {
  * const chunk1 = await finalizeChunk();
  * await uploadToServer(chunk1);
  *
- * // Recording continues...
+ * // On Android, call markChunkStart() again to start next chunk
+ * // On iOS, recording continues automatically
+ * markChunkStart();
  * const chunk2 = await finalizeChunk();
  * await uploadToServer(chunk2);
  * ```
@@ -340,11 +338,6 @@ export function flushChunk(): void {
 export async function finalizeChunk(options?: {
   settledTimeMs: number;
 }): Promise<ScreenRecordingFile | undefined> {
-  if (Platform.OS === 'android') {
-    console.warn('`finalizeChunk` is only supported on iOS.');
-    return undefined;
-  }
-
   let settledTimeMs = 500;
   if (options?.settledTimeMs) {
     if (
@@ -472,14 +465,6 @@ export function addBroadcastPickerListener(
  * ```
  */
 export function getExtensionStatus(): RawExtensionStatus {
-  if (Platform.OS === 'android') {
-    return {
-      isMicrophoneEnabled: false,
-      isCapturingChunk: false,
-      chunkStartedAt: 0,
-    };
-  }
-
   return NitroScreenRecorderHybridObject.getExtensionStatus();
 }
 
