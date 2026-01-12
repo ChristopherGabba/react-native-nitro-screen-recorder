@@ -126,6 +126,7 @@ export default function App() {
     ScreenRecorder.startGlobalRecording({
       options: {
         enableMic: true,
+        separateAudioFile: true,
       },
       onRecordingError: (error) => {
         console.error('❌ Global recording error:', error);
@@ -138,7 +139,23 @@ export default function App() {
     const file = await ScreenRecorder.stopGlobalRecording();
     if (file) {
       setGlobalRecording(file);
-      console.log('✅ Global recording stopped:', file.name);
+      console.log('✅ Global recording stopped:');
+      console.log(`   📹 Video: ${file.path}`);
+      console.log(`   📹 Name: ${file.name}`);
+      console.log(`   📹 Size: ${(file.size / 1024).toFixed(1)} KB`);
+      console.log(`   📹 Duration: ${file.duration.toFixed(1)}s`);
+      if (file.audioFile) {
+        console.log(`   🎵 Audio: ${file.audioFile.path}`);
+        console.log(`   🎵 Audio Name: ${file.audioFile.name}`);
+        console.log(
+          `   🎵 Audio Size: ${(file.audioFile.size / 1024).toFixed(1)} KB`
+        );
+        console.log(
+          `   🎵 Audio Duration: ${file.audioFile.duration.toFixed(1)}s`
+        );
+      } else {
+        console.log(`   🎵 Audio: (none)`);
+      }
     }
     setIsChunkingActive(false);
   };
@@ -177,10 +194,29 @@ export default function App() {
       setChunks((prev) => [...prev, newChunk]);
       setChunkCounter((prev) => prev + 1);
       setSelectedChunk(newChunk);
-      console.log(`✅ Chunk ${newChunk.id} finalized:`, file.name);
+
+      // Log all file paths
+      console.log(`✅ Chunk ${newChunk.id} finalized:`);
+      console.log(`   📹 Video: ${file.path}`);
+      console.log(`   📹 Name: ${file.name}`);
+      console.log(`   📹 Size: ${(file.size / 1024).toFixed(1)} KB`);
+      console.log(`   📹 Duration: ${file.duration.toFixed(1)}s`);
+      if (file.audioFile) {
+        console.log(`   🎵 Audio: ${file.audioFile.path}`);
+        console.log(`   🎵 Audio Name: ${file.audioFile.name}`);
+        console.log(
+          `   🎵 Audio Size: ${(file.audioFile.size / 1024).toFixed(1)} KB`
+        );
+        console.log(
+          `   🎵 Audio Duration: ${file.audioFile.duration.toFixed(1)}s`
+        );
+      } else {
+        console.log(`   🎵 Audio: (none)`);
+      }
+
       Alert.alert(
         'Chunk Finalized',
-        `Chunk ${newChunk.id} saved (${(file.size / 1024).toFixed(1)} KB, ${file.duration.toFixed(1)}s)`
+        `Chunk ${newChunk.id} saved (${(file.size / 1024).toFixed(1)} KB, ${file.duration.toFixed(1)}s)${file.audioFile ? '\n🎵 Audio extracted' : ''}`
       );
     } else {
       console.log('⚠️ No chunk file returned');

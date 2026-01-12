@@ -505,7 +505,25 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
       // Store as last recording for retrieval
       lastGlobalRecording = chunkFile
       
-      // Return the chunk file
+      // Get audio file if extracted
+      val audioFile = service.getLastAudioFile()
+      lastGlobalAudioRecording = audioFile
+      
+      // Build audio file info if available
+      val audioFileInfo = audioFile?.let { af ->
+        if (af.exists()) {
+          AudioRecordingFile(
+            path = "file://${af.absolutePath}",
+            name = af.name,
+            size = af.length().toDouble(),
+            duration = RecorderUtils.getAudioDuration(af)
+          )
+        } else {
+          null
+        }
+      }
+      
+      // Return the chunk file with audio if available
       return@async if (chunkFile.exists()) {
         ScreenRecordingFile(
           path = "file://${chunkFile.absolutePath}",
@@ -513,7 +531,7 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
           size = chunkFile.length().toDouble(),
           duration = RecorderUtils.getVideoDuration(chunkFile),
           enabledMicrophone = service.isMicrophoneEnabled(),
-          audioFile = null,  // Chunks don't have separate audio for now
+          audioFile = audioFileInfo,
           appAudioFile = null
         )
       } else {

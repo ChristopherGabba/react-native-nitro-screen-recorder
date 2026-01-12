@@ -536,6 +536,22 @@ class ScreenRecordingService : Service() {
         chunkFile = RecorderUtils.optimizeForStreaming(it)
       }
 
+      // Extract audio to separate file if requested and mic was enabled
+      if (separateAudioFile && enableMic && chunkFile != null) {
+        val base = applicationContext.externalCacheDir ?: applicationContext.filesDir
+        val recordingsDir = File(base, "recordings")
+        val audioFile = RecorderUtils.createAudioOutputFile(recordingsDir, "chunk_audio")
+        
+        val extracted = RecorderUtils.extractAudioFromVideo(chunkFile!!, audioFile)
+        if (extracted) {
+          currentAudioFile = audioFile
+          Log.d(TAG, "🎵 Chunk audio extracted to: ${audioFile.absolutePath}")
+        } else {
+          Log.w(TAG, "⚠️ Failed to extract audio from chunk")
+          audioFile.delete()
+        }
+      }
+
       // Update state - chunk done, but recording session still active
       isCapturing = false
       chunkStartedAt = 0.0
@@ -564,6 +580,7 @@ class ScreenRecordingService : Service() {
   fun getChunkStartedAt(): Double = chunkStartedAt
   fun getCaptureMode(): CaptureMode = captureMode
   fun isMicrophoneEnabled(): Boolean = enableMic
+  fun getLastAudioFile(): File? = currentAudioFile
   
   /** Returns true if we have an active MediaProjection session (even if paused between chunks) */
   fun hasActiveSession(): Boolean = mediaProjection != null
