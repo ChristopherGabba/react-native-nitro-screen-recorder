@@ -187,12 +187,18 @@ export const useGlobalRecording = (
     return unsubscribe;
   }, [props]);
 
+  // Use a ref to track the current isRecording state for use in polling
+  const isRecordingRef = useRef(false);
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
+
   // Polling for isRecording (using isCaptured) and extensionStatus
   useEffect(() => {
     const pollingInterval = props?.pollingIntervalMs ?? 200;
 
     const pollStatus = () => {
-      // Use isCaptured for reliable isRecording detection
+      // Use isCaptured for reliable isRecording detection (backup for hot reload)
       const currentlyRecording = isScreenBeingRecorded();
 
       // Detect transitions for app refresh case (when event listener missed the start)
@@ -206,8 +212,11 @@ export const useGlobalRecording = (
       // Get extension status for detailed info (chunk status, mic, etc.)
       const rawStatus = getExtensionStatus();
 
-      // Derive state from isRecording (reliable)
-      const state: ExtensionState = !currentlyRecording
+      // Use isRecording state (from event listeners, which works reliably)
+      // OR polling result as fallback - whichever says recording is active
+      const isActive = isRecordingRef.current || currentlyRecording;
+
+      const state: ExtensionState = !isActive
         ? 'idle'
         : rawStatus.isCapturingChunk
           ? 'capturingChunk'

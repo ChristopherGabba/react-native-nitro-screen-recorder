@@ -216,6 +216,12 @@ class ScreenRecordingService : Service() {
       Log.w(TAG, "⚠️ Already recording")
       return
     }
+    
+    // If there's an existing MediaProjection (e.g., from before hot reload), clean it up first
+    if (mediaProjection != null) {
+      Log.w(TAG, "🧹 Cleaning up stale MediaProjection before starting new recording")
+      cleanup()
+    }
 
     try {
       this.enableMic = enableMicrophone
@@ -434,14 +440,15 @@ class ScreenRecordingService : Service() {
       )
       newRecorder.prepare()
 
-      // SEAMLESS SWAP: Update the VirtualDisplay surface to point to new recorder
-      // This redirects the screen capture to the new recorder without creating a new VirtualDisplay
-      virtualDisplay?.setSurface(newRecorder.surface)
-      Log.d(TAG, "📍 VirtualDisplay surface swapped to new recorder")
-
-      // Start the new recorder (now receiving frames)
+      // IMPORTANT: Start the new recorder BEFORE swapping the surface
+      // This ensures frames are written to a fully initialized recorder
       newRecorder.start()
       Log.d(TAG, "📍 New chunk recorder started")
+
+      // SEAMLESS SWAP: Update the VirtualDisplay surface to point to new recorder
+      // This redirects the screen capture to the running recorder
+      virtualDisplay?.setSurface(newRecorder.surface)
+      Log.d(TAG, "📍 VirtualDisplay surface swapped to new recorder")
 
       // Update references
       mediaRecorder = newRecorder
@@ -511,15 +518,15 @@ class ScreenRecordingService : Service() {
       val chunkDuration = chunkEndedAt - chunkStartedAt
       Log.d(TAG, "📦 Chunk duration: ${chunkDuration}s (from $chunkStartedAt to $chunkEndedAt)")
 
-      // Stop the current recorder
+      // IMPORTANT: Set surface to null FIRST to stop receiving new frames
+      // This prevents frames from being sent to a recorder that's being stopped
+      virtualDisplay?.setSurface(null)
+      Log.d(TAG, "📦 VirtualDisplay surface cleared (paused)")
+
+      // Now stop and release the recorder
       mediaRecorder?.stop()
       mediaRecorder?.release()
       mediaRecorder = null
-
-      // DON'T release VirtualDisplay - keep it for next chunk
-      // Just set surface to null to pause frame capture
-      virtualDisplay?.setSurface(null)
-      Log.d(TAG, "📦 VirtualDisplay surface cleared (paused)")
 
       chunkFile = currentRecordingFile
       currentRecordingFile = null

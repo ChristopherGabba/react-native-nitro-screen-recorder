@@ -9,7 +9,26 @@ import {
 } from 'react-native';
 import * as ScreenRecorder from '../../';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+
+/**
+ * Dev-only hook to cleanup stale Android recording sessions after hot reload.
+ * In production, this is a no-op since hot reload doesn't exist.
+ */
+const useDevCleanup = () => {
+  useEffect(() => {
+    if (__DEV__ && Platform.OS === 'android') {
+      console.log('🧹 [Dev] Cleaning up any stale recording sessions...');
+      ScreenRecorder.stopGlobalRecording({ settledTimeMs: 100 })
+        .then(() => {
+          console.log('🧹 [Dev] Cleanup complete (session was active)');
+        })
+        .catch(() => {
+          console.log('🧹 [Dev] Cleanup complete (no active session)');
+        });
+    }
+  }, []);
+};
 
 type Chunk = {
   id: number;
@@ -18,6 +37,9 @@ type Chunk = {
 };
 
 export default function App() {
+  // Dev-only: cleanup stale sessions after hot reload (Android)
+  useDevCleanup();
+
   // In-app recording state
   const [inAppRecording, setInAppRecording] = useState<
     ScreenRecorder.ScreenRecordingFile | undefined
@@ -566,7 +588,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   playerContainer: {
-    marginTop: 16,
+    marginTop: 12,
   },
   playerLabel: {
     fontSize: 12,

@@ -92,9 +92,50 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
       mediaProjectionManager =
         ctx.getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
       instance = this
+      
+      // Try to rebind to existing service if it's running (handles hot reload case)
+      if (isServiceRunning(ctx)) {
+        Log.d(TAG, "🔄 Service is running, attempting to rebind...")
+        rebindToExistingService(ctx)
+      }
+      
       Log.d(TAG, "✅ NitroScreenRecorder initialization complete")
     } ?: run {
       Log.e(TAG, "❌ NitroScreenRecorder: applicationContext was null")
+    }
+  }
+  
+  /**
+   * Check if the ScreenRecordingService is currently running.
+   * This works even if we're not bound to the service.
+   */
+  @Suppress("DEPRECATION")
+  private fun isServiceRunning(context: Context): Boolean {
+    val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+    for (service in manager.getRunningServices(Int.MAX_VALUE)) {
+      if (ScreenRecordingService::class.java.name == service.service.className) {
+        return true
+      }
+    }
+    return false
+  }
+  
+  /**
+   * Attempt to rebind to an existing ScreenRecordingService.
+   * Called on init to handle hot reload scenarios.
+   */
+  private fun rebindToExistingService(context: Context) {
+    if (isServiceBound) {
+      Log.d(TAG, "Already bound to service")
+      return
+    }
+    
+    val intent = Intent(context, ScreenRecordingService::class.java)
+    try {
+      context.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+      Log.d(TAG, "🔗 Rebind to existing service initiated")
+    } catch (e: Exception) {
+      Log.e(TAG, "❌ Failed to rebind to service: ${e.message}")
     }
   }
 
@@ -341,29 +382,53 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
 
   override fun stopGlobalRecording(settledTimeMs: Double): Promise<ScreenRecordingFile?> {
     return Promise.async {
-      val ctx = NitroModules.applicationContext ?: return@async null
+      try {
+        val ctx = NitroModules.applicationContext
+        if (ctx == null) {
+          Log.w(TAG, "No application context")
+          return@async null
+        }
 
-      // Check if we have an active session (MediaProjection exists)
-      // This handles both active recording AND paused state (between chunks)
-      val service = globalRecordingService
-      if (service == null || !service.hasActiveSession()) {
-        Log.w(TAG, "No active recording session to stop")
+        // Check if we have an active session (MediaProjection exists)
+        val service = globalRecordingService
+        val hasActiveSession = service?.hasActiveSession() == true
+        val serviceRunning = isServiceRunning(ctx)
+        
+        if (!hasActiveSession && !serviceRunning) {
+          Log.w(TAG, "No active recording session to stop")
+          return@async null
+        }
+        
+        // If service is running but we're not bound, we still send the stop intent
+        // This handles hot reload scenarios where the service is orphaned
+        if (serviceRunning) {
+          Log.d(TAG, "🛑 Stopping recording service (bound: $isServiceBound, hasSession: $hasActiveSession)")
+          
+          val stopIntent = Intent(ctx, ScreenRecordingService::class.java).apply {
+            action = ScreenRecordingService.ACTION_STOP_RECORDING
+          }
+          ctx.startService(stopIntent)
+        }
+
+        if (isServiceBound) {
+          try {
+            ctx.unbindService(serviceConnection)
+          } catch (e: Exception) {
+            Log.w(TAG, "Service already unbound: ${e.message}")
+          }
+          isServiceBound = false
+        }
+        
+        globalRecordingService = null
+
+        delay(settledTimeMs.toLong())
+
+        return@async retrieveLastGlobalRecording()
+      } catch (e: Exception) {
+        Log.e(TAG, "Error stopping global recording: ${e.message}")
+        e.printStackTrace()
         return@async null
       }
-
-      val stopIntent = Intent(ctx, ScreenRecordingService::class.java).apply {
-        action = ScreenRecordingService.ACTION_STOP_RECORDING
-      }
-      ctx.startService(stopIntent)
-
-      if (isServiceBound) {
-        ctx.unbindService(serviceConnection)
-        isServiceBound = false
-      }
-
-      delay(settledTimeMs.toLong())
-
-      return@async retrieveLastGlobalRecording()
     }
   }
 
@@ -470,8 +535,29 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
   }
 
   override fun isScreenBeingRecorded(): Boolean {
-    // On Android, check if we have an active recording session
-    // This returns true for both active recording AND paused state (between chunks)
-    return globalRecordingService?.hasActiveSession() == true
+    val service = globalRecordingService
+    val hasSession = service?.hasActiveSession() == true
+    val isRecording = service?.isCurrentlyRecording() == true
+    val ctx = NitroModules.applicationContext
+    val serviceRunning = if (ctx != null) isServiceRunning(ctx) else false
+    
+    // Log for debugging
+    Log.d(TAG, "📊 isScreenBeingRecorded: hasSession=$hasSession, isRecording=$isRecording, serviceRunning=$serviceRunning, isBound=$isServiceBound")
+    
+    // Return true if we have an active MediaProjection session (even if paused between chunks)
+    if (hasSession) {
+      return true
+    }
+    
+    // Fallback: check if the service is running even if we're not bound
+    if (ctx == null) return false
+    
+    // If service is running but we're not bound, try to rebind
+    if (serviceRunning && !isServiceBound) {
+      Log.d(TAG, "📡 Service running but not bound, attempting rebind...")
+      rebindToExistingService(ctx)
+    }
+    
+    return serviceRunning
   }
 }
