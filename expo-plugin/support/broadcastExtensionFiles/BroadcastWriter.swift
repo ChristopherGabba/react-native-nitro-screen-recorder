@@ -4,6 +4,7 @@
 // https://github.com/romiroma/BroadcastWriter
 
 import AVFoundation
+import AudioToolbox
 import CoreGraphics
 import Foundation
 import ReplayKit
@@ -44,6 +45,51 @@ public final class BroadcastWriter {
   private var audioAssetWriterSessionStarted: Bool = false
   private let assetWriterQueue: DispatchQueue
   private let assetWriter: AVAssetWriter
+
+  // Shared session start time for audio/video sync
+  // All writers use the same reference timestamp to stay in sync
+  private var sessionStartTime: CMTime?
+
+  // Track timestamps for padding audio to match video length
+  private var lastVideoEndTime: CMTime = .zero
+  private var lastVideoPTS: CMTime?
+  private var lastVideoFrameDuration: CMTime = .zero
+  private var lastMicEndTime: CMTime = .zero
+  private var lastAppAudioEndTime: CMTime = .zero
+
+  // Audio format info for generating silence padding
+  private var micAudioFormatDescription: CMFormatDescription?
+  private var appAudioFormatDescription: CMFormatDescription?
+  private lazy var defaultAudioFormatDescription: CMFormatDescription? = {
+    let fallbackSampleRate = audioSampleRate > 0 ? audioSampleRate : 48_000
+    var asbd = AudioStreamBasicDescription(
+      mSampleRate: fallbackSampleRate,
+      mFormatID: kAudioFormatLinearPCM,
+      mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
+      mBytesPerPacket: 2,
+      mFramesPerPacket: 1,
+      mBytesPerFrame: 2,
+      mChannelsPerFrame: 1,
+      mBitsPerChannel: 16,
+      mReserved: 0
+    )
+    var desc: CMFormatDescription?
+    let status = CMAudioFormatDescriptionCreate(
+      allocator: kCFAllocatorDefault,
+      asbd: &asbd,
+      layoutSize: 0,
+      layout: nil,
+      magicCookieSize: 0,
+      magicCookie: nil,
+      extensions: nil,
+      formatDescriptionOut: &desc
+    )
+    if status != noErr {
+      debugPrint("⚠️ Failed to create default audio format description: \(status)")
+      return nil
+    }
+    return desc
+  }()
 
   // Separate mic audio writer
   private var separateAudioWriter: AVAssetWriter?
@@ -99,7 +145,11 @@ public final class BroadcastWriter {
   }()
 
   private var audioSampleRate: Double {
-    AVAudioSession.sharedInstance().sampleRate
+    #if os(iOS)
+      return AVAudioSession.sharedInstance().sampleRate
+    #else
+      return 48_000
+    #endif
   }
   private lazy var audioInput: AVAssetWriterInput = {
 
@@ -286,8 +336,16 @@ public final class BroadcastWriter {
       return false
     }
 
-    assetWriterQueue.sync {
-      startSessionIfNeeded(sampleBuffer: sampleBuffer)
+    if sampleBufferType == .video {
+      assetWriterQueue.sync {
+        startSessionIfNeeded(sampleBuffer: sampleBuffer)
+      }
+    } else {
+      let hasSessionStart = assetWriterQueue.sync { sessionStartTime != nil }
+      if !hasSessionStart {
+        debugPrint("⚠️ Audio sample received before video session start; dropping.")
+        return false
+      }
     }
 
     let capture: (CMSampleBuffer) -> Bool
@@ -344,6 +402,11 @@ public final class BroadcastWriter {
   public func finishWithAudio() throws -> FinishResult {
     return try assetWriterQueue.sync {
       let group: DispatchGroup = .init()
+
+      // Pad audio files with silence to match video length
+      if isPositiveTime(lastVideoEndTime) {
+        padAudioToVideoLength()
+      }
 
       inputs
         .lazy
@@ -456,27 +519,39 @@ extension BroadcastWriter {
     }
 
     let sourceTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+    // Store the reference timestamp for all writers to use
+    sessionStartTime = sourceTime
     assetWriter.startSession(atSourceTime: sourceTime)
     assetWriterSessionStarted = true
   }
 
-  fileprivate func startAudioSessionIfNeeded(sampleBuffer: CMSampleBuffer) {
-    guard !audioAssetWriterSessionStarted, let audioWriter = separateAudioWriter else {
+  fileprivate func startAudioSessionIfNeeded() {
+    guard !audioAssetWriterSessionStarted, let audioWriter = separateAudioWriter,
+      audioWriter.status == .writing
+    else {
       return
     }
 
-    let sourceTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-    audioWriter.startSession(atSourceTime: sourceTime)
+    // Always use the shared session start time for audio/video sync
+    guard let startTime = sessionStartTime else {
+      return
+    }
+    audioWriter.startSession(atSourceTime: startTime)
     audioAssetWriterSessionStarted = true
   }
 
-  fileprivate func startAppAudioSessionIfNeeded(sampleBuffer: CMSampleBuffer) {
-    guard !appAudioAssetWriterSessionStarted, let appWriter = appAudioWriter else {
+  fileprivate func startAppAudioSessionIfNeeded() {
+    guard !appAudioAssetWriterSessionStarted, let appWriter = appAudioWriter,
+      appWriter.status == .writing
+    else {
       return
     }
 
-    let sourceTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-    appWriter.startSession(atSourceTime: sourceTime)
+    // Always use the shared session start time for audio/video sync
+    guard let startTime = sessionStartTime else {
+      return
+    }
+    appWriter.startSession(atSourceTime: startTime)
     appAudioAssetWriterSessionStarted = true
   }
 
@@ -485,7 +560,32 @@ extension BroadcastWriter {
       debugPrint("videoInput is not ready")
       return false
     }
-    return videoInput.append(sampleBuffer)
+    let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+    var frameDuration = CMSampleBufferGetDuration(sampleBuffer)
+    if !isPositiveTime(frameDuration), let lastPTS = lastVideoPTS {
+      let delta = CMTimeSubtract(pts, lastPTS)
+      if isPositiveTime(delta) {
+        frameDuration = delta
+      }
+    }
+    if !isPositiveTime(frameDuration) {
+      frameDuration =
+        isPositiveTime(lastVideoFrameDuration)
+        ? lastVideoFrameDuration
+        : CMTime(value: 1, timescale: 60)
+    }
+    let endTime = isPositiveTime(frameDuration) ? CMTimeAdd(pts, frameDuration) : pts
+    let appended = videoInput.append(sampleBuffer)
+    if appended {
+      if isPositiveTime(frameDuration) {
+        lastVideoFrameDuration = frameDuration
+      }
+      lastVideoPTS = pts
+      if CMTimeCompare(endTime, lastVideoEndTime) > 0 {
+        lastVideoEndTime = endTime
+      }
+    }
+    return appended
   }
 
   fileprivate func captureAudioOutput(_ sampleBuffer: CMSampleBuffer) -> Bool {
@@ -502,6 +602,15 @@ extension BroadcastWriter {
       debugPrint("microphoneInput is not ready")
       return false
     }
+    guard let startTime = sessionStartTime else {
+      debugPrint("⚠️ Mic audio before video session start; dropping.")
+      return false
+    }
+    let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+    if CMTimeCompare(pts, startTime) < 0 {
+      debugPrint("⚠️ Mic audio timestamp precedes video start; dropping.")
+      return false
+    }
     return microphoneInput.append(sampleBuffer)
   }
 
@@ -516,14 +625,36 @@ extension BroadcastWriter {
       return false
     }
 
+    guard let startTime = sessionStartTime else {
+      debugPrint("⚠️ Mic audio before video session start; dropping.")
+      return false
+    }
+
     // Start session if needed
-    startAudioSessionIfNeeded(sampleBuffer: sampleBuffer)
+    startAudioSessionIfNeeded()
+
+    let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+    if CMTimeCompare(pts, startTime) < 0 {
+      debugPrint("⚠️ Mic audio timestamp precedes video start; dropping.")
+      return false
+    }
+
+    // Track format for padding
+    if micAudioFormatDescription == nil {
+      micAudioFormatDescription = CMSampleBufferGetFormatDescription(sampleBuffer)
+    }
+    let duration = audioSampleDuration(sampleBuffer, formatDescription: micAudioFormatDescription)
+    let endTime = isPositiveTime(duration) ? CMTimeAdd(pts, duration) : pts
 
     guard separateAudioInput.isReadyForMoreMediaData else {
       debugPrint("separateAudioInput is not ready")
       return false
     }
-    return separateAudioInput.append(sampleBuffer)
+    let appended = separateAudioInput.append(sampleBuffer)
+    if appended, CMTimeCompare(endTime, lastMicEndTime) > 0 {
+      lastMicEndTime = endTime
+    }
+    return appended
   }
 
   fileprivate func captureAppAudioOutput(_ sampleBuffer: CMSampleBuffer) -> Bool {
@@ -537,13 +668,281 @@ extension BroadcastWriter {
       return false
     }
 
+    guard let startTime = sessionStartTime else {
+      debugPrint("⚠️ App audio before video session start; dropping.")
+      return false
+    }
+
     // Start session if needed
-    startAppAudioSessionIfNeeded(sampleBuffer: sampleBuffer)
+    startAppAudioSessionIfNeeded()
+
+    let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+    if CMTimeCompare(pts, startTime) < 0 {
+      debugPrint("⚠️ App audio timestamp precedes video start; dropping.")
+      return false
+    }
+
+    // Track format for padding
+    if appAudioFormatDescription == nil {
+      appAudioFormatDescription = CMSampleBufferGetFormatDescription(sampleBuffer)
+    }
+    let duration = audioSampleDuration(sampleBuffer, formatDescription: appAudioFormatDescription)
+    let endTime = isPositiveTime(duration) ? CMTimeAdd(pts, duration) : pts
 
     guard appAudioInput.isReadyForMoreMediaData else {
       debugPrint("appAudioInput is not ready")
       return false
     }
-    return appAudioInput.append(sampleBuffer)
+    let appended = appAudioInput.append(sampleBuffer)
+    if appended, CMTimeCompare(endTime, lastAppAudioEndTime) > 0 {
+      lastAppAudioEndTime = endTime
+    }
+    return appended
+  }
+
+  // MARK: - Audio Padding
+
+  /// Pads audio files with silence to match video length
+  fileprivate func padAudioToVideoLength() {
+    let videoEndTime = lastVideoEndTime
+    guard isPositiveTime(videoEndTime), let sessionStartTime = sessionStartTime else {
+      debugPrint("📐 Padding skipped: missing video end time or session start time")
+      return
+    }
+    debugPrint("📐 Video end time: \(videoEndTime.seconds)s")
+
+    // Pad mic audio if it's shorter than video
+    if separateAudioFile, let audioWriter = separateAudioWriter, audioWriter.status == .writing {
+      if !audioAssetWriterSessionStarted {
+        audioWriter.startSession(atSourceTime: sessionStartTime)
+        audioAssetWriterSessionStarted = true
+      }
+      let micStartTime = isPositiveTime(lastMicEndTime) ? lastMicEndTime : sessionStartTime
+      if CMTimeCompare(micStartTime, videoEndTime) < 0 {
+        let silenceDuration = CMTimeSubtract(videoEndTime, micStartTime)
+        debugPrint("📐 Padding mic audio with \(silenceDuration.seconds)s of silence")
+        appendSilence(
+          to: separateAudioInput,
+          from: micStartTime,
+          duration: silenceDuration,
+          formatDescription: micAudioFormatDescription ?? defaultAudioFormatDescription
+        )
+      } else {
+        debugPrint("📐 Mic audio already matches/exceeds video length; no padding needed")
+      }
+    } else {
+      debugPrint("📐 Mic audio padding skipped: no separate mic writer or not writing")
+    }
+
+    // Pad app audio if it's shorter than video
+    if separateAudioFile, let appWriter = appAudioWriter, appWriter.status == .writing {
+      if !appAudioAssetWriterSessionStarted {
+        appWriter.startSession(atSourceTime: sessionStartTime)
+        appAudioAssetWriterSessionStarted = true
+      }
+      let appStartTime =
+        isPositiveTime(lastAppAudioEndTime) ? lastAppAudioEndTime : sessionStartTime
+      if CMTimeCompare(appStartTime, videoEndTime) < 0 {
+        let silenceDuration = CMTimeSubtract(videoEndTime, appStartTime)
+        debugPrint("📐 Padding app audio with \(silenceDuration.seconds)s of silence")
+        appendSilence(
+          to: appAudioInput,
+          from: appStartTime,
+          duration: silenceDuration,
+          formatDescription: appAudioFormatDescription ?? defaultAudioFormatDescription
+        )
+      } else {
+        debugPrint("📐 App audio already matches/exceeds video length; no padding needed")
+      }
+    } else {
+      debugPrint("📐 App audio padding skipped: no app writer or not writing")
+    }
+  }
+
+  /// Appends silent audio samples to an input
+  fileprivate func appendSilence(
+    to input: AVAssetWriterInput,
+    from startTime: CMTime,
+    duration: CMTime,
+    formatDescription: CMFormatDescription?
+  ) {
+    guard isPositiveTime(duration) else {
+      return
+    }
+    let formatDesc = formatDescription ?? defaultAudioFormatDescription
+    guard let formatDesc else {
+      debugPrint("⚠️ Cannot pad audio: no format description available")
+      return
+    }
+
+    // Get audio format details
+    guard let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDesc)?.pointee else {
+      debugPrint("⚠️ Cannot pad audio: unable to get audio stream description")
+      return
+    }
+
+    let sampleRate = asbd.mSampleRate > 0 ? asbd.mSampleRate : audioSampleRate
+    let channelCount = max(Int(asbd.mChannelsPerFrame), 1)
+    let bitsPerChannel = asbd.mBitsPerChannel > 0 ? Int(asbd.mBitsPerChannel) : 16
+    let bytesPerSample = max(bitsPerChannel / 8, 1)
+    let isNonInterleaved = (asbd.mFormatFlags & kAudioFormatFlagIsNonInterleaved) != 0
+    let bytesPerFrame: Int = {
+      if asbd.mBytesPerFrame > 0 {
+        return Int(asbd.mBytesPerFrame)
+      }
+      let channelsForFrame = isNonInterleaved ? 1 : channelCount
+      return bytesPerSample * channelsForFrame
+    }()
+
+    let timeScale = CMTimeScale(sampleRate.rounded())
+    guard timeScale > 0 else {
+      debugPrint("⚠️ Cannot pad audio: invalid sample rate \(sampleRate)")
+      return
+    }
+
+    // Calculate samples needed (generate in chunks to avoid huge allocations)
+    let samplesNeededTime = CMTimeConvertScale(
+      duration, timescale: timeScale, method: .roundHalfAwayFromZero)
+    var samplesRemaining = Int(samplesNeededTime.value)
+    guard samplesRemaining > 0 else {
+      return
+    }
+
+    let samplesPerChunk = 1024
+    var currentTime = startTime
+
+    while samplesRemaining > 0 {
+      guard waitForInputReady(input, timeout: 0.5) else {
+        debugPrint("⚠️ Input not ready while padding audio; remaining samples: \(samplesRemaining)")
+        break
+      }
+
+      let samplesToWrite = min(samplesRemaining, samplesPerChunk)
+      let bufferSize = samplesToWrite * bytesPerFrame
+      let bufferCount = isNonInterleaved ? channelCount : 1
+
+      // Allocate AudioBufferList
+      let audioBufferList = AudioBufferList.allocate(maximumBuffers: bufferCount)
+      audioBufferList.unsafeMutablePointer.pointee.mNumberBuffers = UInt32(bufferCount)
+
+      var bufferPointers: [UnsafeMutableRawPointer] = []
+      bufferPointers.reserveCapacity(bufferCount)
+
+      for i in 0..<bufferCount {
+        guard let silentData = calloc(bufferSize, 1) else {
+          break
+        }
+        bufferPointers.append(silentData)
+
+        audioBufferList[i].mNumberChannels = isNonInterleaved ? 1 : UInt32(channelCount)
+        audioBufferList[i].mDataByteSize = UInt32(bufferSize)
+        audioBufferList[i].mData = silentData
+      }
+      defer {
+        bufferPointers.forEach { free($0) }
+        audioBufferList.unsafeMutablePointer.deallocate()
+      }
+
+      if bufferPointers.count != bufferCount {
+        debugPrint("⚠️ Failed to allocate silent audio buffers")
+        break
+      }
+
+      // Create CMSampleBuffer
+      var sampleBuffer: CMSampleBuffer?
+      var timing = CMSampleTimingInfo(
+        duration: CMTime(value: 1, timescale: timeScale),
+        presentationTimeStamp: currentTime,
+        decodeTimeStamp: .invalid
+      )
+
+      let status = CMSampleBufferCreate(
+        allocator: kCFAllocatorDefault,
+        dataBuffer: nil,
+        dataReady: false,
+        makeDataReadyCallback: nil,
+        refcon: nil,
+        formatDescription: formatDesc,
+        sampleCount: samplesToWrite,
+        sampleTimingEntryCount: 1,
+        sampleTimingArray: &timing,
+        sampleSizeEntryCount: 0,
+        sampleSizeArray: nil,
+        sampleBufferOut: &sampleBuffer
+      )
+
+      guard status == noErr, let buffer = sampleBuffer else {
+        debugPrint("⚠️ Failed to create silent sample buffer: \(status)")
+        break
+      }
+
+      // Set audio buffer data
+      let setStatus = CMSampleBufferSetDataBufferFromAudioBufferList(
+        buffer,
+        blockBufferAllocator: kCFAllocatorDefault,
+        blockBufferMemoryAllocator: kCFAllocatorDefault,
+        flags: 0,
+        bufferList: audioBufferList.unsafePointer
+      )
+
+      guard setStatus == noErr else {
+        debugPrint("⚠️ Failed to set audio buffer data: \(setStatus)")
+        break
+      }
+
+      // Append to writer
+      if !input.append(buffer) {
+        debugPrint("⚠️ Failed to append silent audio buffer")
+        break
+      }
+
+      // Advance time
+      let chunkDuration = CMTime(value: CMTimeValue(samplesToWrite), timescale: timeScale)
+      currentTime = CMTimeAdd(currentTime, chunkDuration)
+      samplesRemaining -= samplesToWrite
+    }
+
+    debugPrint("📐 Finished padding audio, remaining samples: \(samplesRemaining)")
+  }
+
+  // MARK: - Helpers
+
+  fileprivate func isPositiveTime(_ time: CMTime) -> Bool {
+    time.isValid && !time.isIndefinite && CMTimeCompare(time, .zero) > 0
+  }
+
+  fileprivate func audioSampleDuration(
+    _ sampleBuffer: CMSampleBuffer,
+    formatDescription: CMFormatDescription?
+  ) -> CMTime {
+    let duration = CMSampleBufferGetDuration(sampleBuffer)
+    if isPositiveTime(duration) {
+      return duration
+    }
+
+    if let formatDescription,
+      let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription)?.pointee
+    {
+      let sampleRate = asbd.mSampleRate > 0 ? asbd.mSampleRate : audioSampleRate
+      if sampleRate > 0 {
+        let sampleCount = CMSampleBufferGetNumSamples(sampleBuffer)
+        let timeScale = CMTimeScale(sampleRate.rounded())
+        if timeScale > 0 {
+          return CMTime(value: CMTimeValue(sampleCount), timescale: timeScale)
+        }
+      }
+    }
+    return .zero
+  }
+
+  fileprivate func waitForInputReady(_ input: AVAssetWriterInput, timeout: TimeInterval) -> Bool {
+    let start = Date()
+    while !input.isReadyForMoreMediaData {
+      if Date().timeIntervalSince(start) >= timeout {
+        return false
+      }
+      Thread.sleep(forTimeInterval: 0.005)
+    }
+    return true
   }
 }

@@ -39,7 +39,7 @@ export const withAndroidScreenRecording: ConfigPlugin<ConfigProps> = (
           'android:name': serviceName,
           'android:enabled': 'true',
           'android:exported': 'false',
-          'android:foregroundServiceType': 'mediaProjection',
+          'android:foregroundServiceType': 'mediaProjection|microphone',
         },
       });
       ScreenRecorderLog.log(

@@ -47,6 +47,7 @@ const withScreenRecorder: ConfigPlugin<ConfigProps> = (config, props = {}) => {
       : []),
     'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION',
+    'android.permission.FOREGROUND_SERVICE_MICROPHONE',
     'android.permission.POST_NOTIFICATIONS',
   ];
 

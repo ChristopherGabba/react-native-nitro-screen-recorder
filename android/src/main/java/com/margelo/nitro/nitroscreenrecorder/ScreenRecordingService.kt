@@ -8,6 +8,7 @@ import android.hardware.display.VirtualDisplay
 import android.media.MediaRecorder
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
+import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.Build
 import android.os.Handler
@@ -149,6 +150,20 @@ class ScreenRecordingService : Service() {
           "🎬 Start recording: resultCode=$resultCode, enableMic=$enableMicrophone, separateAudio=$separateAudio"
         )
 
+        // CRITICAL: Call startForeground IMMEDIATELY to satisfy Android's timing requirements
+        // This must happen within 5 seconds of startForegroundService()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+          val serviceType = if (enableMicrophone) {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+          } else {
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+          }
+          startForeground(NOTIFICATION_ID, createForegroundNotification(false), serviceType)
+        } else {
+          startForeground(NOTIFICATION_ID, createForegroundNotification(false))
+        }
+        Log.d(TAG, "✅ startForeground called immediately in onStartCommand")
+
         if (resultData != null) {
           startRecording(resultCode, resultData, enableMicrophone, separateAudio)
         } else {
@@ -242,7 +257,8 @@ class ScreenRecordingService : Service() {
       }
       isSingleAppMode = false
 
-      startForeground(NOTIFICATION_ID, createForegroundNotification(false))
+      // Note: startForeground is now called in onStartCommand before this method
+      // to satisfy Android's timing requirements
 
       val mediaProjectionManager =
         getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -624,5 +640,16 @@ class ScreenRecordingService : Service() {
     Log.d(TAG, "💀 onDestroy called")
     cleanup()
     super.onDestroy()
+  }
+  
+  override fun onTaskRemoved(rootIntent: Intent?) {
+    Log.d(TAG, "🚨 onTaskRemoved called - app swiped away from recents")
+    // Don't cleanup here - keep recording even if app is swiped away
+    super.onTaskRemoved(rootIntent)
+  }
+  
+  override fun onTrimMemory(level: Int) {
+    Log.d(TAG, "💾 onTrimMemory called with level: $level")
+    super.onTrimMemory(level)
   }
 }
