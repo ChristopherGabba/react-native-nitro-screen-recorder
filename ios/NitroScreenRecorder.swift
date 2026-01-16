@@ -727,21 +727,25 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
       )
     }
 
-    // Expect at most one .mp4; pick it if present
+    // Get all .mp4 files and sort by creation date (FIFO - oldest first)
     let contents = try fm.contentsOfDirectory(
       at: docsURL,
-      includingPropertiesForKeys: nil,
+      includingPropertiesForKeys: [.creationDateKey],
       options: [.skipsHiddenFiles]
     )
 
-    let mp4s = contents.filter { $0.pathExtension.lowercased() == "mp4" }
+    let mp4s = contents
+      .filter { $0.pathExtension.lowercased() == "mp4" }
+      .sorted { url1, url2 in
+        let date1 = (try? url1.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
+        let date2 = (try? url2.resourceValues(forKeys: [.creationDateKey]))?.creationDate ?? Date.distantPast
+        return date1 < date2  // Oldest first (FIFO)
+      }
 
     // If none, return nil
     guard let sourceURL = mp4s.first else { return nil }
-
-    // If there are multiple (unexpected), pick the first and optionally clean extras
-    // You could uncomment the following to delete extras:
-    // for extra in mp4s.dropFirst() { try? fm.removeItem(at: extra) }
+    
+    print("📦 retrieveLastGlobalRecording: Found \(mp4s.count) chunk(s), retrieving oldest: \(sourceURL.lastPathComponent)")
 
     // Prepare local caches destination
     let cachesURL = try fm.url(
@@ -768,8 +772,10 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
       destinationURL = recordingsDir.appendingPathComponent("\(base)-\(ts).mp4")
     }
 
-    // Copy into caches
+    // Copy into caches, then delete from shared container (FIFO queue behavior)
     try fm.copyItem(at: sourceURL, to: destinationURL)
+    try? fm.removeItem(at: sourceURL)  // Remove from container so next retrieval gets the next chunk
+    print("📦 retrieveLastGlobalRecording: Moved chunk to cache, removed from container")
 
     // Build ScreenRecordingFile from the local copy
     let attrs = try fm.attributesOfItem(atPath: destinationURL.path)
@@ -804,6 +810,7 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
 
         do {
           try fm.copyItem(at: audioSourceURL, to: audioDestinationURL)
+          try? fm.removeItem(at: audioSourceURL)  // Remove from container
 
           let audioAttrs = try fm.attributesOfItem(atPath: audioDestinationURL.path)
           let audioSize = (audioAttrs[.size] as? NSNumber)?.doubleValue ?? 0.0
@@ -844,6 +851,7 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
 
         do {
           try fm.copyItem(at: appAudioSourceURL, to: appAudioDestinationURL)
+          try? fm.removeItem(at: appAudioSourceURL)  // Remove from container
 
           let appAudioAttrs = try fm.attributesOfItem(atPath: appAudioDestinationURL.path)
           let appAudioSize = (appAudioAttrs[.size] as? NSNumber)?.doubleValue ?? 0.0

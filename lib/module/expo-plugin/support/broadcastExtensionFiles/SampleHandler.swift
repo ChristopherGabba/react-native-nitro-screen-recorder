@@ -406,8 +406,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
       return
     }
 
-    // Clean up old recordings first (we only keep the latest chunk)
-    cleanupOldRecordings(in: groupID)
+    // Note: We no longer clean up here - chunks accumulate during a session.
+    // Cleanup happens in broadcastStarted (new session) and broadcastFinished (stop).
+    // This prevents losing chunks if finalizeChunk is called multiple times quickly.
 
     // Move video file to shared container
     let videoDestination = containerURL.appendingPathComponent(result.videoURL.lastPathComponent)
