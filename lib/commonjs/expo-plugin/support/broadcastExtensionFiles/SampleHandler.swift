@@ -153,6 +153,20 @@ final class SampleHandler: RPBroadcastSampleHandler {
     isBroadcastActive = true
     updateExtensionStatus()
 
+    // Configure audio session for Bluetooth support (AirPods, etc.)
+    do {
+      let audioSession = AVAudioSession.sharedInstance()
+      try audioSession.setCategory(
+        .playAndRecord,
+        mode: .videoRecording,
+        options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers]
+      )
+      try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+      debugPrint("✅ Audio session configured for broadcast with Bluetooth support")
+    } catch {
+      debugPrint("⚠️ Failed to configure audio session: \(error)")
+    }
+
     guard let groupID = hostAppGroupIdentifier else {
       finishBroadcastWithError(
         NSError(
@@ -543,6 +557,14 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
     // Clear extension status AFTER all file operations complete
     clearExtensionStatus()
+
+    // Deactivate audio session
+    do {
+      try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+      debugPrint("✅ Audio session deactivated")
+    } catch {
+      debugPrint("⚠️ Failed to deactivate audio session: \(error)")
+    }
   }
 
   /// Clears all extension status from UserDefaults

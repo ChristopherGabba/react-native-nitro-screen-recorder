@@ -9,7 +9,9 @@ import {
 } from 'react-native';
 import * as ScreenRecorder from '../../';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
+
+const MIC_FAILURE_DELAY_MS = 1500; // Wait 1.5s before marking mic failure
 
 /**
  * Dev-only hook to cleanup stale Android recording sessions after hot reload.
@@ -56,14 +58,25 @@ export default function App() {
   const [isChunkingActive, setIsChunkingActive] = useState(false);
   const [selectedChunk, setSelectedChunk] = useState<Chunk | undefined>();
 
+  // Mic detection gating state
+  const [hadMicFailure, setHadMicFailure] = useState(false);
+  const [isStopping, setIsStopping] = useState(false);
+  const micFailureTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
+  const hasStoppedForMicFailureRef = useRef(false);
+
   // Use the hook - it handles extension status polling while recording
   const { isRecording, extensionStatus } = ScreenRecorder.useGlobalRecording({
     onRecordingStarted: () => {
       console.log('🎬 Recording started');
+      hasStoppedForMicFailureRef.current = false;
+      setHadMicFailure(false);
     },
     onRecordingFinished: () => {
       console.log('🛑 Recording ended');
       setIsChunkingActive(false);
+      hasStoppedForMicFailureRef.current = false;
     },
     onBroadcastModalShown: () => {
       console.log('📱 Modal showing');
@@ -72,6 +85,99 @@ export default function App() {
       console.log('📱 Modal dismissed');
     },
   });
+
+  // Mic detection gating logic
+  const isMicEnabled =
+    Platform.OS === 'android'
+      ? isRecording
+      : extensionStatus.isMicrophoneEnabled;
+
+  const isReady = isRecording && isMicEnabled;
+
+  // Extension is actually running (not just starting)
+  const extensionRunning =
+    extensionStatus.state === 'running' ||
+    extensionStatus.state === 'capturingChunk';
+  const currentMicFailure = isRecording && extensionRunning && !isMicEnabled;
+
+  // Detect mic failure with delay to avoid false positives
+  useEffect(() => {
+    if (currentMicFailure && !hadMicFailure) {
+      if (micFailureTimeoutRef.current) {
+        clearTimeout(micFailureTimeoutRef.current);
+      }
+
+      micFailureTimeoutRef.current = setTimeout(() => {
+        console.log(
+          '⚠️ Mic failure detected - recording started without microphone enabled'
+        );
+        setHadMicFailure(true);
+        micFailureTimeoutRef.current = null;
+      }, MIC_FAILURE_DELAY_MS);
+    } else if (!currentMicFailure && micFailureTimeoutRef.current) {
+      clearTimeout(micFailureTimeoutRef.current);
+      micFailureTimeoutRef.current = null;
+    }
+
+    return () => {
+      if (micFailureTimeoutRef.current) {
+        clearTimeout(micFailureTimeoutRef.current);
+        micFailureTimeoutRef.current = null;
+      }
+    };
+  }, [currentMicFailure, hadMicFailure]);
+
+  // Log when recording becomes ready (mic enabled)
+  const wasReadyRef = useRef(false);
+  useEffect(() => {
+    if (isReady && !wasReadyRef.current) {
+      console.log('✅ Recording ready with mic enabled');
+      wasReadyRef.current = true;
+    } else if (!isRecording && wasReadyRef.current) {
+      wasReadyRef.current = false; // Reset when recording stops
+    }
+  }, [isReady, isRecording]);
+
+  // Clear mic failure when recording becomes ready
+  useEffect(() => {
+    if (isReady && hadMicFailure) {
+      console.log('✅ Mic now enabled, clearing failure state');
+      setHadMicFailure(false);
+    }
+  }, [isReady, hadMicFailure]);
+
+  // Auto-stop recording on mic failure
+  useEffect(() => {
+    if (
+      hadMicFailure &&
+      isRecording &&
+      !isStopping &&
+      !hasStoppedForMicFailureRef.current
+    ) {
+      console.log('🛑 Auto-stopping recording due to mic not enabled');
+      hasStoppedForMicFailureRef.current = true;
+      setIsStopping(true);
+      ScreenRecorder.stopGlobalRecording({ settledTimeMs: 500 })
+        .then(() => {
+          console.log('✅ Recording stopped after mic failure');
+          setIsStopping(false);
+        })
+        .catch((error) => {
+          console.error(
+            '❌ Failed to stop recording after mic failure:',
+            error
+          );
+          setIsStopping(false);
+        });
+    }
+  }, [hadMicFailure, isRecording, isStopping]);
+
+  // Clear stopping state when recording ends
+  useEffect(() => {
+    if (!isRecording && isStopping) {
+      setIsStopping(false);
+    }
+  }, [isRecording, isStopping]);
 
   // Video players
   const inAppPlayer = useVideoPlayer(inAppRecording?.path ?? null);
@@ -321,6 +427,32 @@ export default function App() {
           </TouchableOpacity>
         </View>
 
+        {/* Mic Gating Status Banner */}
+        {isRecording && (
+          <View
+            style={[
+              styles.micStatusBanner,
+              isReady && styles.micStatusReady,
+              hadMicFailure && styles.micStatusFailure,
+              isStopping && styles.micStatusStopping,
+              !isReady &&
+                !hadMicFailure &&
+                !isStopping &&
+                styles.micStatusAwaiting,
+            ]}
+          >
+            <Text style={styles.micStatusText}>
+              {isStopping
+                ? '🛑 Stopping (mic not enabled)...'
+                : hadMicFailure
+                  ? '❌ MIC FAILURE - Auto-stopping recording'
+                  : isReady
+                    ? '✅ Recording with Mic Enabled'
+                    : '⏳ Awaiting mic activation...'}
+            </Text>
+          </View>
+        )}
+
         {/* Status */}
         <View style={styles.statusBar}>
           <View style={styles.statusRow}>
@@ -332,7 +464,7 @@ export default function App() {
                 : '⚪ Idle'}
             </Text>
             <Text style={styles.statusText}>
-              Mic: {extensionStatus.isMicrophoneEnabled ? '🎤' : '🔇'}
+              Mic: {isMicEnabled ? '🎤 Enabled' : '🔇 Disabled'}
             </Text>
           </View>
           <View style={styles.statusRow}>
@@ -343,6 +475,21 @@ export default function App() {
                 : '⚪ None'}
             </Text>
             <Text style={styles.statusText}>Total: {chunks.length}</Text>
+          </View>
+          <View style={styles.statusRow}>
+            <Text style={styles.statusText}>
+              Gating:{' '}
+              {hadMicFailure
+                ? '❌ Failed'
+                : isReady
+                  ? '✅ Ready'
+                  : isRecording
+                    ? '⏳ Checking...'
+                    : '⚪ Idle'}
+            </Text>
+            <Text style={styles.statusText}>
+              isReady: {isReady ? 'true' : 'false'}
+            </Text>
           </View>
           {/* Capture Mode - Android 14+ only */}
           {Platform.OS === 'android' && isRecording && (
@@ -567,6 +714,37 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.7)',
     fontSize: 12,
     marginTop: 4,
+  },
+  micStatusBanner: {
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  micStatusReady: {
+    backgroundColor: '#1B4332',
+    borderWidth: 1,
+    borderColor: '#34C759',
+  },
+  micStatusFailure: {
+    backgroundColor: '#4A1C1C',
+    borderWidth: 1,
+    borderColor: '#FF3B30',
+  },
+  micStatusStopping: {
+    backgroundColor: '#4A3A1C',
+    borderWidth: 1,
+    borderColor: '#FF9500',
+  },
+  micStatusAwaiting: {
+    backgroundColor: '#1C2A4A',
+    borderWidth: 1,
+    borderColor: '#5856D6',
+  },
+  micStatusText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
   statusBar: {
     backgroundColor: '#2C2C2E',
