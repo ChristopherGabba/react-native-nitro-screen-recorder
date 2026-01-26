@@ -182,11 +182,19 @@ public final class BroadcastWriter {
 
   // Separate audio file input (for microphone audio only)
   private lazy var separateAudioInput: AVAssetWriterInput = {
+    // Calculate appropriate bitrate based on sample rate
+    // AAC encoder rejects high bitrates for low sample rates (e.g. 128kbps at 24kHz)
+    // Base: 64kbps for 44.1kHz mono, scaled proportionally
+    let scaleFactor = audioSampleRate / 44100.0
+    let bitRatePerChannel = 64000.0 * scaleFactor
+    let calculatedBitRate = Int(bitRatePerChannel)
+    let bitRate = max(min(calculatedBitRate, 128000), 24000)
+
     var audioSettings: [String: Any] = [
       AVFormatIDKey: kAudioFormatMPEG4AAC,
       AVNumberOfChannelsKey: 1,
       AVSampleRateKey: audioSampleRate,
-      AVEncoderBitRateKey: 128000,
+      AVEncoderBitRateKey: bitRate,
     ]
     let input: AVAssetWriterInput = .init(
       mediaType: .audio,
@@ -198,11 +206,19 @@ public final class BroadcastWriter {
 
   // Separate app audio file input
   private lazy var appAudioInput: AVAssetWriterInput = {
+    // Calculate appropriate bitrate based on sample rate
+    // AAC encoder rejects high bitrates for low sample rates (e.g. 128kbps at 24kHz)
+    // Base: 64kbps for 44.1kHz mono, scaled proportionally
+    let scaleFactor = audioSampleRate / 44100.0
+    let bitRatePerChannel = 64000.0 * scaleFactor
+    let calculatedBitRate = Int(bitRatePerChannel)
+    let bitRate = max(min(calculatedBitRate, 128000), 24000)
+
     var audioSettings: [String: Any] = [
       AVFormatIDKey: kAudioFormatMPEG4AAC,
       AVNumberOfChannelsKey: 1,
       AVSampleRateKey: audioSampleRate,
-      AVEncoderBitRateKey: 128000,
+      AVEncoderBitRateKey: bitRate,
     ]
     let input: AVAssetWriterInput = .init(
       mediaType: .audio,
