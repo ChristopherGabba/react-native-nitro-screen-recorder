@@ -43,6 +43,19 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
   private var isBroadcastModalShowing: Bool = false
   private var appStateObservers: [NSObjectProtocol] = []
 
+  // Chunk ID for queue-based retrieval (stored locally to avoid race conditions)
+  private var currentChunkId: String?
+
+  // Guard against concurrent finalizeChunk calls
+  private var isFinalizingChunk: Bool = false
+
+  // Continuation for waiting on chunkSaved notification
+  private var chunkSavedContinuation: CheckedContinuation<Void, Never>?
+
+  // Darwin notification names
+  private static let chunkSavedNotificationString = "com.nitroscreenrecorder.chunkSaved"
+  private static let chunkSavedNotificationName = CFNotificationName("com.nitroscreenrecorder.chunkSaved" as CFString)
+
   override init() {
     super.init()
     registerListener()
@@ -647,8 +660,10 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
    Marks the start of a new recording chunk. Discards any content recorded since the last
    markChunkStart() or finalizeChunk() call, and begins recording to a fresh file.
    Use this to indicate "I care about content starting NOW".
+   
+   - Parameter chunkId: Optional identifier for this chunk. Used for guaranteed correct retrieval.
    */
-  func markChunkStart() throws {
+  func markChunkStart(chunkId: String?) throws {
     // Check both our local flag AND the system's isCaptured state
     // This handles the case where the app was refreshed during recording
     guard isGlobalRecordingActive || UIScreen.main.isCaptured else {
@@ -656,24 +671,46 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
       return
     }
 
+    // Store chunkId locally to avoid race conditions when finalizeChunk reads it
+    self.currentChunkId = chunkId
+
+    // Also store in UserDefaults for the broadcast extension to read
+    if let appGroupId = try? getAppGroupIdentifier() {
+      let defaults = UserDefaults(suiteName: appGroupId)
+      if let id = chunkId {
+        defaults?.set(id, forKey: "CurrentChunkId")
+      } else {
+        defaults?.removeObject(forKey: "CurrentChunkId")
+      }
+      defaults?.synchronize()
+    }
+
+    // Send notification twice for reliability (Darwin notifications can be dropped)
     let notif = "com.nitroscreenrecorder.markChunk" as CFString
-    CFNotificationCenterPostNotification(
-      CFNotificationCenterGetDarwinNotifyCenter(),
-      CFNotificationName(notif),
-      nil,
-      nil,
-      true
-    )
-    print("📍 markChunkStart: Notification sent to broadcast extension")
+    let darwinCenter = CFNotificationCenterGetDarwinNotifyCenter()
+    CFNotificationCenterPostNotification(darwinCenter, CFNotificationName(notif), nil, nil, true)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+      CFNotificationCenterPostNotification(darwinCenter, CFNotificationName(notif), nil, nil, true)
+    }
+    print("📍 markChunkStart: Notification sent to broadcast extension, chunkId=\(chunkId ?? "nil")")
   }
 
   /**
    Finalizes the current recording chunk and returns it, then starts a new chunk.
    The recording session continues uninterrupted.
    Returns the video file containing content from the last markChunkStart() (or recording start) until now.
+   Uses event-driven waiting: listens for chunkSaved notification from extension.
    */
   func finalizeChunk(settledTimeMs: Double) throws -> Promise<ScreenRecordingFile?> {
     return Promise.async {
+      // Guard against concurrent calls
+      guard !self.isFinalizingChunk else {
+        print("⚠️ finalizeChunk called while another finalize is in progress. Rejecting.")
+        return nil
+      }
+      self.isFinalizingChunk = true
+      defer { self.isFinalizingChunk = false }
+
       // Check both our local flag AND the system's isCaptured state
       // This handles the case where the app was refreshed during recording
       let isScreenCaptured = await MainActor.run { UIScreen.main.isCaptured }
@@ -683,24 +720,88 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
         return nil
       }
 
-      let notif = "com.nitroscreenrecorder.finalizeChunk" as CFString
-      CFNotificationCenterPostNotification(
-        CFNotificationCenterGetDarwinNotifyCenter(),
-        CFNotificationName(notif),
+      // Capture the chunkId NOW from local storage (not UserDefaults)
+      // This prevents race condition if markChunkStart is called again before retrieve
+      let chunkIdToRetrieve = self.currentChunkId
+
+      // Setup listener for chunkSaved notification BEFORE sending finalizeChunk
+      let center = CFNotificationCenterGetDarwinNotifyCenter()
+      let observer = UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
+
+      CFNotificationCenterAddObserver(
+        center,
+        observer,
+        { _, observer, name, _, _ in
+          guard let observer else { return }
+          let me = Unmanaged<NitroScreenRecorder>.fromOpaque(observer).takeUnretainedValue()
+          // Resume continuation if waiting
+          if let cont = me.chunkSavedContinuation {
+            me.chunkSavedContinuation = nil
+            cont.resume()
+          }
+        },
+        NitroScreenRecorder.chunkSavedNotificationString as CFString,
         nil,
-        nil,
-        true
+        .deliverImmediately
       )
-      print("📦 finalizeChunk: Notification sent to broadcast extension")
 
-      // Wait for the specified settle time to allow the broadcast to finish writing the file.
-      let settleTimeNanoseconds = UInt64(settledTimeMs * 1_000_000)  // Convert ms to nanoseconds
-      try? await Task.sleep(nanoseconds: settleTimeNanoseconds)
+      // Send finalizeChunk notification to extension (send twice for reliability)
+      let notif = "com.nitroscreenrecorder.finalizeChunk" as CFString
+      let darwinCenter = CFNotificationCenterGetDarwinNotifyCenter()
+      CFNotificationCenterPostNotification(darwinCenter, CFNotificationName(notif), nil, nil, true)
+      // Small delay then send again to increase delivery reliability
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        CFNotificationCenterPostNotification(darwinCenter, CFNotificationName(notif), nil, nil, true)
+      }
 
+      // Wait for chunkSaved signal OR timeout - then fall back to polling
+      // Wait 500ms for notification, then poll aggressively
+      let notificationWaitNs = UInt64(500_000_000)  // 500ms for notification
+
+      // Race between notification and timeout
+      await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+        self.chunkSavedContinuation = continuation
+
+        // Start timeout task (short wait)
+        Task {
+          try? await Task.sleep(nanoseconds: notificationWaitNs)
+          // If continuation still exists, we timed out
+          if let cont = self.chunkSavedContinuation {
+            self.chunkSavedContinuation = nil
+            cont.resume()
+          }
+        }
+      }
+
+      // Remove observer
+      CFNotificationCenterRemoveObserver(
+        center,
+        observer,
+        NitroScreenRecorder.chunkSavedNotificationName,
+        nil
+      )
+
+      // Try to retrieve with aggressive polling if first attempt fails
       do {
-        return try self.retrieveLastGlobalRecording()
+        if let file = try self.retrieveGlobalRecording(chunkId: chunkIdToRetrieve) {
+          return file
+        }
+
+        // Poll up to 15 times, 200ms apart (~3 second total extra wait)
+        for attempt in 1...15 {
+          print("⚠️ Retrieval returned nil, polling attempt \(attempt)/15...")
+          try? await Task.sleep(nanoseconds: 200_000_000)  // 200ms
+
+          if let file = try self.retrieveGlobalRecording(chunkId: chunkIdToRetrieve) {
+            print("✅ Polling attempt \(attempt) succeeded")
+            return file
+          }
+        }
+
+        print("❌ All polling attempts returned nil")
+        return nil
       } catch {
-        print("❌ retrieveLastGlobalRecording failed after finalizeChunk:", error)
+        print("❌ retrieveGlobalRecording failed after finalizeChunk:", error)
         return nil
       }
     }
@@ -883,6 +984,206 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     )
   }
 
+  /**
+   Queue-based retrieval of global recording chunks.
+   If chunkId is provided, retrieves that specific chunk.
+   If chunkId is nil, retrieves the newest chunk (LIFO order).
+   Returns nil if no matching chunk is found.
+   */
+  func retrieveGlobalRecording(chunkId: String?) throws -> ScreenRecordingFile? {
+    let fm = FileManager.default
+
+    guard let appGroupId = try? getAppGroupIdentifier(),
+      let docsURL = fm
+        .containerURL(forSecurityApplicationGroupIdentifier: appGroupId)?
+        .appendingPathComponent("Library/Documents/", isDirectory: true),
+      let defaults = UserDefaults(suiteName: appGroupId)
+    else {
+      throw RecorderError.error(
+        name: "APP_GROUP_ACCESS_FAILED",
+        message: "Could not access app group container"
+      )
+    }
+
+    // Read queue
+    var chunks = defaults.array(forKey: "PendingChunks") as? [[String: Any]] ?? []
+
+    if chunks.isEmpty {
+      print("⚠️ retrieveGlobalRecording: Queue is empty - extension may not have saved the chunk")
+      return nil
+    }
+
+    // Find chunk to retrieve
+    let chunkIndex: Int
+    let chunkEntry: [String: Any]
+
+    if let targetId = chunkId {
+      // Find by ID
+      if let idx = chunks.firstIndex(where: { ($0["chunkId"] as? String) == targetId }) {
+        chunkIndex = idx
+        chunkEntry = chunks[idx]
+        print("📦 retrieveGlobalRecording: Found chunk by ID '\(targetId)' at index \(idx)")
+      } else {
+        print("⚠️ retrieveGlobalRecording: Chunk not found with ID '\(targetId)'")
+        print("   Available chunks: \(chunks.compactMap { $0["chunkId"] as? String })")
+        // Fallback to LIFO if ID not found
+        chunkIndex = chunks.count - 1
+        chunkEntry = chunks[chunkIndex]
+        print("📦 retrieveGlobalRecording: Falling back to LIFO (index \(chunkIndex))")
+      }
+    } else {
+      // LIFO fallback: get newest (last in array)
+      chunkIndex = chunks.count - 1
+      chunkEntry = chunks[chunkIndex]
+      print("📦 retrieveGlobalRecording: No ID specified, using LIFO (index \(chunkIndex))")
+    }
+
+    // Extract chunk info
+    guard let videoFileName = chunkEntry["video"] as? String else {
+      print("❌ retrieveGlobalRecording: Chunk entry missing 'video' field")
+      return nil
+    }
+    let micAudioFileName = chunkEntry["micAudio"] as? String
+    let appAudioFileName = chunkEntry["appAudio"] as? String
+    let micEnabled = chunkEntry["micEnabled"] as? Bool ?? false
+    let hadSeparateAudio = chunkEntry["hadSeparateAudio"] as? Bool ?? false
+
+    // Verify video file exists
+    let videoSourceURL = docsURL.appendingPathComponent(videoFileName)
+    guard fm.fileExists(atPath: videoSourceURL.path) else {
+      print("⚠️ retrieveGlobalRecording: Video file not found at \(videoSourceURL.path)")
+      print("   Removing orphaned queue entry")
+      chunks.remove(at: chunkIndex)
+      defaults.set(chunks, forKey: "PendingChunks")
+      defaults.synchronize()
+      return nil
+    }
+
+    // Setup caches directory
+    let cachesURL = try fm.url(
+      for: .cachesDirectory,
+      in: .userDomainMask,
+      appropriateFor: nil,
+      create: true
+    )
+    let recordingsDir = cachesURL.appendingPathComponent("ScreenRecordings", isDirectory: true)
+    try fm.createDirectory(at: recordingsDir, withIntermediateDirectories: true)
+
+    // STEP 1: Copy video to caches
+    var videoDestURL = recordingsDir.appendingPathComponent(videoFileName)
+    if fm.fileExists(atPath: videoDestURL.path) {
+      let ts = Int(Date().timeIntervalSince1970)
+      let base = videoSourceURL.deletingPathExtension().lastPathComponent
+      videoDestURL = recordingsDir.appendingPathComponent("\(base)-\(ts).mp4")
+    }
+    try fm.copyItem(at: videoSourceURL, to: videoDestURL)
+    print("✅ Copied video to caches: \(videoFileName)")
+
+    // STEP 2: Copy audio files (if they exist)
+    var audioFile: AudioRecordingFile? = nil
+    if hadSeparateAudio, let micFileName = micAudioFileName {
+      let micSourceURL = docsURL.appendingPathComponent(micFileName)
+      if fm.fileExists(atPath: micSourceURL.path) {
+        var micDestURL = recordingsDir.appendingPathComponent(micFileName)
+        if fm.fileExists(atPath: micDestURL.path) {
+          let ts = Int(Date().timeIntervalSince1970)
+          let base = micSourceURL.deletingPathExtension().lastPathComponent
+          micDestURL = recordingsDir.appendingPathComponent("\(base)-\(ts).m4a")
+        }
+        do {
+          try fm.copyItem(at: micSourceURL, to: micDestURL)
+
+          let micAttrs = try fm.attributesOfItem(atPath: micDestURL.path)
+          let micSize = (micAttrs[.size] as? NSNumber)?.doubleValue ?? 0.0
+          let micAsset = AVURLAsset(url: micDestURL)
+          let micDuration = CMTimeGetSeconds(micAsset.duration)
+
+          audioFile = AudioRecordingFile(
+            path: micDestURL.absoluteString,
+            name: micDestURL.lastPathComponent,
+            size: micSize,
+            duration: micDuration
+          )
+          print("✅ Copied mic audio to caches: \(micFileName)")
+        } catch {
+          print("⚠️ Failed to copy mic audio: \(error)")
+        }
+      }
+    }
+
+    var appAudioFile: AudioRecordingFile? = nil
+    if hadSeparateAudio, let appFileName = appAudioFileName {
+      let appSourceURL = docsURL.appendingPathComponent(appFileName)
+      if fm.fileExists(atPath: appSourceURL.path) {
+        var appDestURL = recordingsDir.appendingPathComponent(appFileName)
+        if fm.fileExists(atPath: appDestURL.path) {
+          let ts = Int(Date().timeIntervalSince1970)
+          let base = appSourceURL.deletingPathExtension().lastPathComponent
+          appDestURL = recordingsDir.appendingPathComponent("\(base)-\(ts).m4a")
+        }
+        do {
+          try fm.copyItem(at: appSourceURL, to: appDestURL)
+
+          let appAttrs = try fm.attributesOfItem(atPath: appDestURL.path)
+          let appSize = (appAttrs[.size] as? NSNumber)?.doubleValue ?? 0.0
+          let appAsset = AVURLAsset(url: appDestURL)
+          let appDuration = CMTimeGetSeconds(appAsset.duration)
+
+          appAudioFile = AudioRecordingFile(
+            path: appDestURL.absoluteString,
+            name: appDestURL.lastPathComponent,
+            size: appSize,
+            duration: appDuration
+          )
+          print("✅ Copied app audio to caches: \(appFileName)")
+        } catch {
+          print("⚠️ Failed to copy app audio: \(error)")
+        }
+      }
+    }
+
+    // STEP 3: Remove from queue AFTER successful copy (prevents duplicates)
+    chunks.remove(at: chunkIndex)
+    defaults.set(chunks, forKey: "PendingChunks")
+    defaults.synchronize()
+    print("✅ Removed chunk from queue")
+
+    // STEP 4: Delete from container (best effort - failure is OK now)
+    do {
+      try fm.removeItem(at: videoSourceURL)
+      print("✅ Deleted video from container")
+    } catch {
+      print("⚠️ Failed to delete video from container (non-critical): \(error)")
+    }
+
+    if let micFileName = micAudioFileName {
+      let micSourceURL = docsURL.appendingPathComponent(micFileName)
+      try? fm.removeItem(at: micSourceURL)
+    }
+    if let appFileName = appAudioFileName {
+      let appSourceURL = docsURL.appendingPathComponent(appFileName)
+      try? fm.removeItem(at: appSourceURL)
+    }
+
+    // Build result
+    let attrs = try fm.attributesOfItem(atPath: videoDestURL.path)
+    let size = (attrs[.size] as? NSNumber)?.doubleValue ?? 0.0
+    let asset = AVURLAsset(url: videoDestURL)
+    let duration = CMTimeGetSeconds(asset.duration)
+
+    print("✅ retrieveGlobalRecording complete: \(videoFileName), duration=\(duration)s")
+
+    return ScreenRecordingFile(
+      path: videoDestURL.absoluteString,
+      name: videoDestURL.lastPathComponent,
+      size: size,
+      duration: duration,
+      enabledMicrophone: micEnabled,
+      audioFile: audioFile,
+      appAudioFile: appAudioFile
+    )
+  }
+
   func safelyClearGlobalRecordingFiles() throws {
     let fm = FileManager.default
 
@@ -901,9 +1202,13 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     do {
       guard fm.fileExists(atPath: docsURL.path) else { return }
       let items = try fm.contentsOfDirectory(at: docsURL, includingPropertiesForKeys: nil)
-      for fileURL in items where fileURL.pathExtension.lowercased() == "mp4" {
-        try fm.removeItem(at: fileURL)
-        print("🗑️ Deleted: \(fileURL.lastPathComponent)")
+      for fileURL in items {
+        let ext = fileURL.pathExtension.lowercased()
+        // Delete video and audio files
+        if ext == "mp4" || ext == "m4a" {
+          try fm.removeItem(at: fileURL)
+          print("🗑️ Deleted: \(fileURL.lastPathComponent)")
+        }
       }
       print("✅ All recording files cleared in \(docsURL.path)")
     } catch {
@@ -911,6 +1216,14 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
         name: "CLEANUP_FAILED",
         message: "Could not clear recording files: \(error.localizedDescription)"
       )
+    }
+
+    // Also clear the pending chunks queue
+    if let defaults = UserDefaults(suiteName: appGroupId) {
+      defaults.removeObject(forKey: "PendingChunks")
+      defaults.removeObject(forKey: "CurrentChunkId")
+      defaults.synchronize()
+      print("✅ Cleared PendingChunks queue")
     }
   }
 

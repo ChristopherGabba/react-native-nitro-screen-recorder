@@ -146,16 +146,19 @@ export declare function stopGlobalRecording(options?: {
  * of the new chunk.
  *
  * @platform iOS, Android
+ * @param chunkId Optional identifier for this chunk. Use this to guarantee correct
+ *   retrieval when finalizeChunk() is called. Recommended for interview/questionnaire
+ *   flows where you need to associate recordings with specific questions.
  * @example
  * ```typescript
  * startGlobalRecording({ onRecordingError: console.error });
  * // User navigates around (content is recorded but uncommitted)
- * markChunkStart(); // "I care about content starting NOW"
+ * markChunkStart('question-5'); // "I care about content starting NOW for question 5"
  * // User does something important...
- * const chunk = await finalizeChunk(); // Get the chunk
+ * const chunk = await finalizeChunk(); // Get the chunk for question 5
  * ```
  */
-export declare function markChunkStart(): void;
+export declare function markChunkStart(chunkId?: string): void;
 /**
  * Discards any content recorded since the last markChunkStart() or finalizeChunk() call,
  * and begins recording to a fresh file. This is an alias for markChunkStart().
@@ -163,16 +166,17 @@ export declare function markChunkStart(): void;
  * Use this when you want to throw away recorded content without saving it.
  *
  * @platform iOS, Android
+ * @param chunkId Optional identifier for the new chunk
  * @example
  * ```typescript
- * markChunkStart(); // Start tracking
+ * markChunkStart('q1'); // Start tracking
  * // User does something...
- * flushChunk(); // Oops, discard that, start fresh
+ * flushChunk('q1'); // Oops, discard that, start fresh
  * // User does something else...
  * const chunk = await finalizeChunk(); // Save this instead
  * ```
  */
-export declare function flushChunk(): void;
+export declare function flushChunk(chunkId?: string): void;
 /**
  * Finalizes the current recording chunk and returns it.
  *
@@ -207,6 +211,7 @@ export declare function finalizeChunk(options?: {
  *
  * @platform iOS, Android
  * @returns The last global recording file or undefined if none exists
+ * @deprecated Use retrieveGlobalRecording() instead for better chunk ID support
  * @example
  * ```typescript
  * const lastRecording = retrieveLastGlobalRecording();
@@ -217,6 +222,32 @@ export declare function finalizeChunk(options?: {
  * ```
  */
 export declare function retrieveLastGlobalRecording(): ScreenRecordingFile | undefined;
+/**
+ * Retrieves a global recording file by its chunk ID, or the most recent one if no ID specified.
+ * Returns undefined if the specified chunk is not found or no recordings exist.
+ *
+ * When a chunkId is provided, this function will find and return only the recording
+ * that was created with that specific ID via markChunkStart(chunkId). This prevents
+ * accidentally retrieving the wrong recording in race conditions.
+ *
+ * @platform iOS, Android
+ * @param chunkId Optional chunk identifier. If provided, retrieves that specific chunk.
+ *   If undefined, retrieves the most recent chunk (LIFO order).
+ * @returns The matching recording file or undefined if not found
+ * @example
+ * ```typescript
+ * // Retrieve by specific ID (recommended for interviews)
+ * markChunkStart('question-5');
+ * // ... user answers ...
+ * const chunk = await finalizeChunk();
+ * // Or manually retrieve:
+ * const recording = retrieveGlobalRecording('question-5');
+ *
+ * // Retrieve most recent (LIFO fallback)
+ * const lastRecording = retrieveGlobalRecording();
+ * ```
+ */
+export declare function retrieveGlobalRecording(chunkId?: string): ScreenRecordingFile | undefined;
 /**
  * Adds a listener for screen recording events (began, ended, etc.).
  * Returns a cleanup function to remove the listener when no longer needed.

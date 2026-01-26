@@ -197,8 +197,8 @@ namespace margelo::nitro::nitroscreenrecorder {
       auto __value = std::move(__result.value());
       return __value;
     }
-    inline void markChunkStart() override {
-      auto __result = _swiftPart.markChunkStart();
+    inline void markChunkStart(const std::optional<std::string>& chunkId) override {
+      auto __result = _swiftPart.markChunkStart(chunkId);
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }
@@ -213,6 +213,14 @@ namespace margelo::nitro::nitroscreenrecorder {
     }
     inline std::optional<ScreenRecordingFile> retrieveLastGlobalRecording() override {
       auto __result = _swiftPart.retrieveLastGlobalRecording();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
+    inline std::optional<ScreenRecordingFile> retrieveGlobalRecording(const std::optional<std::string>& chunkId) override {
+      auto __result = _swiftPart.retrieveGlobalRecording(chunkId);
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }

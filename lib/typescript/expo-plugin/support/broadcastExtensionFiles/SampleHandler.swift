@@ -62,6 +62,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
   private var frameCount: Int = 0
   private let statusUpdateInterval: Int = 15  // Update every 15 frames (~0.25 sec at 60fps)
 
+  // Chunk ID for queue-based retrieval (captured at markChunk, used at save)
+  private var pendingChunkId: String?
+
   // MARK: – Init
   override init() {
     let uuid = UUID().uuidString
@@ -222,6 +225,14 @@ final class SampleHandler: RPBroadcastSampleHandler {
     } catch {
       // Non-critical error, continue with broadcast
     }
+
+    // Also clear the stale pending chunks queue from previous sessions
+    if let defaults = UserDefaults(suiteName: groupID) {
+      defaults.removeObject(forKey: "PendingChunks")
+      defaults.removeObject(forKey: "CurrentChunkId")
+      defaults.synchronize()
+      debugPrint("✅ Cleared stale PendingChunks queue")
+    }
   }
 
   override func processSampleBuffer(
@@ -282,12 +293,32 @@ final class SampleHandler: RPBroadcastSampleHandler {
   /**
    Handles markChunkStart: Discards the current recording and starts a fresh one.
    The current file is NOT saved to the shared container.
+   Captures the chunkId from UserDefaults at the START of this chunk.
    */
+  // Debounce tracking for duplicate notification protection
+  private var lastMarkChunkTime: TimeInterval = 0
+  private var lastFinalizeChunkTime: TimeInterval = 0
+  private let debounceThreshold: TimeInterval = 0.1  // 100ms debounce
+
   private func handleMarkChunk() {
     writerQueue.sync {
+      // Debounce: ignore if called within 100ms of last call
+      let now = Date().timeIntervalSince1970
+      if now - self.lastMarkChunkTime < self.debounceThreshold {
+        debugPrint("📍 handleMarkChunk: Ignoring duplicate notification (debounce)")
+        return
+      }
+      self.lastMarkChunkTime = now
+
       debugPrint("📍 handleMarkChunk: Discarding current chunk and starting fresh")
       self.isCapturing = true
       self.chunkStartedAt = Date().timeIntervalSince1970
+
+      // Capture chunkId at the START of this chunk (before it could be overwritten)
+      if let groupID = hostAppGroupIdentifier {
+        self.pendingChunkId = UserDefaults(suiteName: groupID)?.string(forKey: "CurrentChunkId")
+        debugPrint("📍 handleMarkChunk: Captured chunkId=\(self.pendingChunkId ?? "nil")")
+      }
 
       // Finish current writer without saving
       if let currentWriter = self.writer {
@@ -316,14 +347,46 @@ final class SampleHandler: RPBroadcastSampleHandler {
    */
   private func handleFinalizeChunk() {
     writerQueue.sync {
+      // Debounce: ignore if called within 100ms of last call
+      let now = Date().timeIntervalSince1970
+      if now - self.lastFinalizeChunkTime < self.debounceThreshold {
+        debugPrint("📦 handleFinalizeChunk: Ignoring duplicate notification (debounce)")
+        // Still send notification so main app doesn't hang on the duplicate call
+        let notif = "com.nitroscreenrecorder.chunkSaved" as CFString
+        CFNotificationCenterPostNotification(
+          CFNotificationCenterGetDarwinNotifyCenter(),
+          CFNotificationName(notif),
+          nil,
+          nil,
+          true
+        )
+        return
+      }
+      self.lastFinalizeChunkTime = now
+
       debugPrint("📦 handleFinalizeChunk: Saving current chunk and starting fresh")
 
       // Mark capturing as done (will restart with next markChunkStart)
       self.isCapturing = false
       self.chunkStartedAt = 0
 
+      // Helper to send notification (call before any early return)
+      func sendChunkNotification() {
+        let notif = "com.nitroscreenrecorder.chunkSaved" as CFString
+        CFNotificationCenterPostNotification(
+          CFNotificationCenterGetDarwinNotifyCenter(),
+          CFNotificationName(notif),
+          nil,
+          nil,
+          true
+        )
+        debugPrint("📤 handleFinalizeChunk: Sent chunkSaved notification")
+      }
+
       guard let currentWriter = self.writer else {
-        debugPrint("⚠️ handleFinalizeChunk: No active writer")
+        debugPrint("⚠️ handleFinalizeChunk: No active writer - creating new one")
+        self.createNewWriter()
+        sendChunkNotification()  // Notify so main app doesn't hang
         return
       }
 
@@ -334,10 +397,16 @@ final class SampleHandler: RPBroadcastSampleHandler {
         debugPrint("📦 handleFinalizeChunk: Writer finished successfully")
       } catch {
         debugPrint("❌ handleFinalizeChunk: Error finishing writer: \(error)")
+        // Release the failed writer explicitly
+        self.writer = nil
         // Still try to create a new writer so recording can continue
         self.createNewWriter()
+        sendChunkNotification()  // Notify so main app doesn't hang
         return
       }
+
+      // Release the finished writer before creating new one
+      self.writer = nil
 
       // Save the chunk to shared container
       self.saveChunkToContainer(result: result)
@@ -353,52 +422,87 @@ final class SampleHandler: RPBroadcastSampleHandler {
    Must be called from within writerQueue.
    */
   private func createNewWriter() {
-    let uuid = UUID().uuidString
-
-    // Generate new file URLs
-    nodeURL = fileManager.temporaryDirectory
-      .appendingPathComponent(uuid)
-      .appendingPathExtension(for: .mpeg4Movie)
-
-    audioNodeURL = fileManager.temporaryDirectory
-      .appendingPathComponent("\(uuid)_mic_audio")
-      .appendingPathExtension("m4a")
-
-    appAudioNodeURL = fileManager.temporaryDirectory
-      .appendingPathComponent("\(uuid)_app_audio")
-      .appendingPathExtension("m4a")
-
-    // Clean up any existing files at these paths
-    fileManager.removeFileIfExists(url: nodeURL)
-    fileManager.removeFileIfExists(url: audioNodeURL)
-    fileManager.removeFileIfExists(url: appAudioNodeURL)
-
-    // Create and start the new writer
+    // Explicitly release old writer reference first
+    writer = nil
+    
     let screen: UIScreen = .main
-    do {
-      writer = try BroadcastWriter(
-        outputURL: nodeURL,
-        audioOutputURL: separateAudioFile ? audioNodeURL : nil,
-        appAudioOutputURL: separateAudioFile ? appAudioNodeURL : nil,
-        screenSize: screen.bounds.size,
-        screenScale: screen.scale,
-        separateAudioFile: separateAudioFile
-      )
-      try writer?.start()
-      debugPrint("✅ createNewWriter: New writer created and started")
-    } catch {
-      debugPrint("❌ createNewWriter: Failed to create new writer: \(error)")
-      writer = nil
+    var attempts = 0
+    let maxAttempts = 3
+    
+    while attempts < maxAttempts {
+      attempts += 1
+      
+      // Generate fresh UUID for each attempt
+      let uuid = UUID().uuidString
+      
+      // Generate new file URLs
+      nodeURL = fileManager.temporaryDirectory
+        .appendingPathComponent(uuid)
+        .appendingPathExtension(for: .mpeg4Movie)
+      
+      audioNodeURL = fileManager.temporaryDirectory
+        .appendingPathComponent("\(uuid)_mic_audio")
+        .appendingPathExtension("m4a")
+      
+      appAudioNodeURL = fileManager.temporaryDirectory
+        .appendingPathComponent("\(uuid)_app_audio")
+        .appendingPathExtension("m4a")
+      
+      // Aggressively clean up any existing files at these paths
+      fileManager.removeFileIfExists(url: nodeURL)
+      fileManager.removeFileIfExists(url: audioNodeURL)
+      fileManager.removeFileIfExists(url: appAudioNodeURL)
+      
+      do {
+        writer = try BroadcastWriter(
+          outputURL: nodeURL,
+          audioOutputURL: separateAudioFile ? audioNodeURL : nil,
+          appAudioOutputURL: separateAudioFile ? appAudioNodeURL : nil,
+          screenSize: screen.bounds.size,
+          screenScale: screen.scale,
+          separateAudioFile: separateAudioFile
+        )
+        try writer?.start()
+        debugPrint("✅ createNewWriter: New writer created and started (attempt \(attempts))")
+        return  // Success, exit
+      } catch {
+        debugPrint("❌ createNewWriter: Attempt \(attempts)/\(maxAttempts) failed: \(error)")
+        writer = nil
+        
+        if attempts < maxAttempts {
+          // Brief delay before retry to let resources release
+          Thread.sleep(forTimeInterval: 0.05)  // 50ms (reduced from 150ms)
+        }
+      }
     }
+    
+    debugPrint("❌ createNewWriter: All \(maxAttempts) attempts failed - writer is nil")
   }
 
   /**
-   Saves a finished chunk to the shared App Group container.
+   Saves a finished chunk to the shared App Group container using queue-based storage.
    Must be called from within writerQueue.
+   Uses the captured pendingChunkId for correct pairing with video/audio files.
    */
   private func saveChunkToContainer(result: BroadcastWriter.FinishResult) {
-    guard let groupID = hostAppGroupIdentifier else {
+    // Helper to send notification (always call before returning)
+    func sendChunkNotification() {
+      let notif = "com.nitroscreenrecorder.chunkSaved" as CFString
+      CFNotificationCenterPostNotification(
+        CFNotificationCenterGetDarwinNotifyCenter(),
+        CFNotificationName(notif),
+        nil,
+        nil,
+        true
+      )
+      debugPrint("📤 saveChunkToContainer: Sent chunkSaved notification")
+    }
+    
+    guard let groupID = hostAppGroupIdentifier,
+      let defaults = UserDefaults(suiteName: groupID)
+    else {
       debugPrint("⚠️ saveChunkToContainer: No app group identifier")
+      sendChunkNotification()  // Still notify so main app doesn't hang
       return
     }
 
@@ -409,6 +513,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         .appendingPathComponent("Library/Documents/", isDirectory: true)
     else {
       debugPrint("⚠️ saveChunkToContainer: Could not get container URL")
+      sendChunkNotification()
       return
     }
 
@@ -417,12 +522,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
       try fileManager.createDirectory(at: containerURL, withIntermediateDirectories: true)
     } catch {
       debugPrint("⚠️ saveChunkToContainer: Could not create directory: \(error)")
+      sendChunkNotification()
       return
     }
-
-    // Note: We no longer clean up here - chunks accumulate during a session.
-    // Cleanup happens in broadcastStarted (new session) and broadcastFinished (stop).
-    // This prevents losing chunks if finalizeChunk is called multiple times quickly.
 
     // Move video file to shared container
     let videoDestination = containerURL.appendingPathComponent(result.videoURL.lastPathComponent)
@@ -431,44 +533,82 @@ final class SampleHandler: RPBroadcastSampleHandler {
       debugPrint("✅ saveChunkToContainer: Video saved to \(videoDestination.lastPathComponent)")
     } catch {
       debugPrint("❌ saveChunkToContainer: Failed to move video: \(error)")
+      sendChunkNotification()  // Notify even on failure
       return
     }
 
     // Move mic audio file if it exists
+    var micAudioFileName: String? = nil
     if let audioURL = result.audioURL {
       let audioDestination = containerURL.appendingPathComponent(audioURL.lastPathComponent)
       do {
         try fileManager.moveItem(at: audioURL, to: audioDestination)
-        UserDefaults(suiteName: groupID)?
-          .set(audioDestination.lastPathComponent, forKey: "LastBroadcastAudioFileName")
-        debugPrint("✅ saveChunkToContainer: Mic audio saved")
+        micAudioFileName = audioDestination.lastPathComponent
+        debugPrint("✅ saveChunkToContainer: Mic audio saved: \(micAudioFileName!)")
       } catch {
         debugPrint("⚠️ saveChunkToContainer: Failed to move mic audio: \(error)")
       }
-    } else {
-      UserDefaults(suiteName: groupID)?.removeObject(forKey: "LastBroadcastAudioFileName")
     }
 
     // Move app audio file if it exists
+    var appAudioFileName: String? = nil
     if let appAudioURL = result.appAudioURL {
       let appAudioDestination = containerURL.appendingPathComponent(appAudioURL.lastPathComponent)
       do {
         try fileManager.moveItem(at: appAudioURL, to: appAudioDestination)
-        UserDefaults(suiteName: groupID)?
-          .set(appAudioDestination.lastPathComponent, forKey: "LastBroadcastAppAudioFileName")
-        debugPrint("✅ saveChunkToContainer: App audio saved")
+        appAudioFileName = appAudioDestination.lastPathComponent
+        debugPrint("✅ saveChunkToContainer: App audio saved: \(appAudioFileName!)")
       } catch {
         debugPrint("⚠️ saveChunkToContainer: Failed to move app audio: \(error)")
       }
-    } else {
-      UserDefaults(suiteName: groupID)?.removeObject(forKey: "LastBroadcastAppAudioFileName")
     }
 
-    // Persist metadata
-    UserDefaults(suiteName: groupID)?.set(
-      sawMicBuffers, forKey: "LastBroadcastMicrophoneWasEnabled")
-    UserDefaults(suiteName: groupID)?.set(
-      separateAudioFile, forKey: "LastBroadcastHadSeparateAudio")
+    // Build queue entry with all file references together (atomic pairing)
+    var entry: [String: Any] = [
+      "video": videoDestination.lastPathComponent,
+      "micEnabled": sawMicBuffers,
+      "hadSeparateAudio": separateAudioFile,
+      "timestamp": Date().timeIntervalSince1970
+    ]
+
+    if let id = pendingChunkId {
+      entry["chunkId"] = id
+    }
+    if let mic = micAudioFileName {
+      entry["micAudio"] = mic
+    }
+    if let app = appAudioFileName {
+      entry["appAudio"] = app
+    }
+
+    // Add to queue (replace if same chunkId exists to handle retries)
+    var chunks = defaults.array(forKey: "PendingChunks") as? [[String: Any]] ?? []
+
+    // Remove existing entry with same chunkId (if any) to handle retries
+    if let id = pendingChunkId {
+      chunks.removeAll { ($0["chunkId"] as? String) == id }
+    }
+
+    chunks.append(entry)
+    defaults.set(chunks, forKey: "PendingChunks")
+    defaults.synchronize()
+
+    debugPrint("✅ saveChunkToContainer: Added to queue (total: \(chunks.count))")
+    debugPrint("   Entry: \(entry)")
+
+    // Clear pendingChunkId for next chunk
+    pendingChunkId = nil
+
+    // Notify main app that chunk is saved and ready for retrieval
+    let notif = "com.nitroscreenrecorder.chunkSaved" as CFString
+    CFNotificationCenterPostNotification(
+      CFNotificationCenterGetDarwinNotifyCenter(),
+      CFNotificationName(notif),
+      nil,
+      nil,
+      true
+    )
+    debugPrint("📤 saveChunkToContainer: Sent chunkSaved notification")
   }
 
   override func broadcastFinished() {
@@ -484,10 +624,16 @@ final class SampleHandler: RPBroadcastSampleHandler {
     } catch {
       // Writer failed, but we can't call finishBroadcastWithError here
       // as we're already in the finish process
+      clearExtensionStatus()
       return
     }
 
-    guard let groupID = hostAppGroupIdentifier else { return }
+    guard let groupID = hostAppGroupIdentifier,
+      let defaults = UserDefaults(suiteName: groupID)
+    else {
+      clearExtensionStatus()
+      return
+    }
 
     // Get container directory
     guard
@@ -495,12 +641,16 @@ final class SampleHandler: RPBroadcastSampleHandler {
         fileManager
         .containerURL(forSecurityApplicationGroupIdentifier: groupID)?
         .appendingPathComponent("Library/Documents/", isDirectory: true)
-    else { return }
+    else {
+      clearExtensionStatus()
+      return
+    }
 
     // Create directory if needed
     do {
       try fileManager.createDirectory(at: containerURL, withIntermediateDirectories: true)
     } catch {
+      clearExtensionStatus()
       return
     }
 
@@ -508,52 +658,84 @@ final class SampleHandler: RPBroadcastSampleHandler {
     let videoDestination = containerURL.appendingPathComponent(result.videoURL.lastPathComponent)
     do {
       try fileManager.moveItem(at: result.videoURL, to: videoDestination)
+      debugPrint("✅ broadcastFinished: Video saved to \(videoDestination.lastPathComponent)")
     } catch {
-      // File move failed, but we can't error out at this point
+      debugPrint("❌ broadcastFinished: Failed to move video: \(error)")
+      clearExtensionStatus()
       return
     }
 
-    // Move mic audio file to shared container if it exists
+    // Move mic audio file if it exists
+    var micAudioFileName: String? = nil
     if let audioURL = result.audioURL {
       let audioDestination = containerURL.appendingPathComponent(audioURL.lastPathComponent)
       do {
         try fileManager.moveItem(at: audioURL, to: audioDestination)
-        // Store mic audio file name for retrieval
-        UserDefaults(suiteName: groupID)?
-          .set(audioDestination.lastPathComponent, forKey: "LastBroadcastAudioFileName")
+        micAudioFileName = audioDestination.lastPathComponent
+        debugPrint("✅ broadcastFinished: Mic audio saved: \(micAudioFileName!)")
       } catch {
-        // Audio file move failed, but video is already saved
-        debugPrint("Failed to move mic audio file: \(error)")
+        debugPrint("⚠️ broadcastFinished: Failed to move mic audio: \(error)")
       }
-    } else {
-      // Clear mic audio file name if no separate audio
-      UserDefaults(suiteName: groupID)?
-        .removeObject(forKey: "LastBroadcastAudioFileName")
     }
 
-    // Move app audio file to shared container if it exists
+    // Move app audio file if it exists
+    var appAudioFileName: String? = nil
     if let appAudioURL = result.appAudioURL {
       let appAudioDestination = containerURL.appendingPathComponent(appAudioURL.lastPathComponent)
       do {
         try fileManager.moveItem(at: appAudioURL, to: appAudioDestination)
-        // Store app audio file name for retrieval
-        UserDefaults(suiteName: groupID)?
-          .set(appAudioDestination.lastPathComponent, forKey: "LastBroadcastAppAudioFileName")
+        appAudioFileName = appAudioDestination.lastPathComponent
+        debugPrint("✅ broadcastFinished: App audio saved: \(appAudioFileName!)")
       } catch {
-        // App audio file move failed, but video is already saved
-        debugPrint("Failed to move app audio file: \(error)")
+        debugPrint("⚠️ broadcastFinished: Failed to move app audio: \(error)")
       }
-    } else {
-      // Clear app audio file name if no separate audio
-      UserDefaults(suiteName: groupID)?
-        .removeObject(forKey: "LastBroadcastAppAudioFileName")
     }
 
-    // Persist microphone state and audio file state
-    UserDefaults(suiteName: groupID)?
-      .set(sawMicBuffers, forKey: "LastBroadcastMicrophoneWasEnabled")
-    UserDefaults(suiteName: groupID)?
-      .set(separateAudioFile, forKey: "LastBroadcastHadSeparateAudio")
+    // Build queue entry with all file references together (atomic pairing)
+    var entry: [String: Any] = [
+      "video": videoDestination.lastPathComponent,
+      "micEnabled": sawMicBuffers,
+      "hadSeparateAudio": separateAudioFile,
+      "timestamp": Date().timeIntervalSince1970
+    ]
+
+    if let id = pendingChunkId {
+      entry["chunkId"] = id
+    }
+    if let mic = micAudioFileName {
+      entry["micAudio"] = mic
+    }
+    if let app = appAudioFileName {
+      entry["appAudio"] = app
+    }
+
+    // Add to queue (replace if same chunkId exists)
+    var chunks = defaults.array(forKey: "PendingChunks") as? [[String: Any]] ?? []
+
+    if let id = pendingChunkId {
+      chunks.removeAll { ($0["chunkId"] as? String) == id }
+    }
+
+    chunks.append(entry)
+    defaults.set(chunks, forKey: "PendingChunks")
+    defaults.synchronize()
+
+    debugPrint("✅ broadcastFinished: Added to queue (total: \(chunks.count))")
+    debugPrint("   Entry: \(entry)")
+
+    // Clear pendingChunkId
+    pendingChunkId = nil
+
+    // Notify main app that chunk is saved and ready for retrieval
+    let notif = "com.nitroscreenrecorder.chunkSaved" as CFString
+    CFNotificationCenterPostNotification(
+      CFNotificationCenterGetDarwinNotifyCenter(),
+      CFNotificationName(notif),
+      nil,
+      nil,
+      true
+    )
+    debugPrint("📤 broadcastFinished: Sent chunkSaved notification")
 
     // Clear extension status AFTER all file operations complete
     clearExtensionStatus()

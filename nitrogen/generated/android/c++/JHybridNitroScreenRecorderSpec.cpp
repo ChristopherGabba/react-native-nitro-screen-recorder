@@ -217,9 +217,9 @@ namespace margelo::nitro::nitroscreenrecorder {
       return __promise;
     }();
   }
-  void JHybridNitroScreenRecorderSpec::markChunkStart() {
-    static const auto method = javaClassStatic()->getMethod<void()>("markChunkStart");
-    method(_javaPart);
+  void JHybridNitroScreenRecorderSpec::markChunkStart(const std::optional<std::string>& chunkId) {
+    static const auto method = javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* chunkId */)>("markChunkStart");
+    method(_javaPart, chunkId.has_value() ? jni::make_jstring(chunkId.value()) : nullptr);
   }
   std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> JHybridNitroScreenRecorderSpec::finalizeChunk(double settledTimeMs) {
     static const auto method = javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(double /* settledTimeMs */)>("finalizeChunk");
@@ -240,6 +240,11 @@ namespace margelo::nitro::nitroscreenrecorder {
   std::optional<ScreenRecordingFile> JHybridNitroScreenRecorderSpec::retrieveLastGlobalRecording() {
     static const auto method = javaClassStatic()->getMethod<jni::local_ref<JScreenRecordingFile>()>("retrieveLastGlobalRecording");
     auto __result = method(_javaPart);
+    return __result != nullptr ? std::make_optional(__result->toCpp()) : std::nullopt;
+  }
+  std::optional<ScreenRecordingFile> JHybridNitroScreenRecorderSpec::retrieveGlobalRecording(const std::optional<std::string>& chunkId) {
+    static const auto method = javaClassStatic()->getMethod<jni::local_ref<JScreenRecordingFile>(jni::alias_ref<jni::JString> /* chunkId */)>("retrieveGlobalRecording");
+    auto __result = method(_javaPart, chunkId.has_value() ? jni::make_jstring(chunkId.value()) : nullptr);
     return __result != nullptr ? std::make_optional(__result->toCpp()) : std::nullopt;
   }
   RawExtensionStatus JHybridNitroScreenRecorderSpec::getExtensionStatus() {

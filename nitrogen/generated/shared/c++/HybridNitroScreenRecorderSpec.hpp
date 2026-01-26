@@ -43,6 +43,7 @@ namespace margelo::nitro::nitroscreenrecorder { struct RawExtensionStatus; }
 #include "ScreenRecordingFile.hpp"
 #include <optional>
 #include "RecordingError.hpp"
+#include <string>
 #include "RawExtensionStatus.hpp"
 
 namespace margelo::nitro::nitroscreenrecorder {
@@ -89,9 +90,10 @@ namespace margelo::nitro::nitroscreenrecorder {
       virtual std::shared_ptr<Promise<void>> cancelInAppRecording() = 0;
       virtual void startGlobalRecording(bool enableMic, bool separateAudioFile, const std::function<void(const RecordingError& /* error */)>& onRecordingError) = 0;
       virtual std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> stopGlobalRecording(double settledTimeMs) = 0;
-      virtual void markChunkStart() = 0;
+      virtual void markChunkStart(const std::optional<std::string>& chunkId) = 0;
       virtual std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> finalizeChunk(double settledTimeMs) = 0;
       virtual std::optional<ScreenRecordingFile> retrieveLastGlobalRecording() = 0;
+      virtual std::optional<ScreenRecordingFile> retrieveGlobalRecording(const std::optional<std::string>& chunkId) = 0;
       virtual RawExtensionStatus getExtensionStatus() = 0;
       virtual bool isScreenBeingRecorded() = 0;
       virtual void clearRecordingCache() = 0;

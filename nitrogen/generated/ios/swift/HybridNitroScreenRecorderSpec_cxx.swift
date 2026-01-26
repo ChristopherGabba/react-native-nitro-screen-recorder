@@ -338,9 +338,16 @@ open class HybridNitroScreenRecorderSpec_cxx {
   }
   
   @inline(__always)
-  public final func markChunkStart() -> bridge.Result_void_ {
+  public final func markChunkStart(chunkId: bridge.std__optional_std__string_) -> bridge.Result_void_ {
     do {
-      try self.__implementation.markChunkStart()
+      try self.__implementation.markChunkStart(chunkId: { () -> String? in
+        if bridge.has_value_std__optional_std__string_(chunkId) {
+          let __unwrapped = bridge.get_std__optional_std__string_(chunkId)
+          return String(__unwrapped)
+        } else {
+          return nil
+        }
+      }())
       return bridge.create_Result_void_()
     } catch (let __error) {
       let __exceptionPtr = __error.toCpp()
@@ -377,6 +384,31 @@ open class HybridNitroScreenRecorderSpec_cxx {
   public final func retrieveLastGlobalRecording() -> bridge.Result_std__optional_ScreenRecordingFile__ {
     do {
       let __result = try self.__implementation.retrieveLastGlobalRecording()
+      let __resultCpp = { () -> bridge.std__optional_ScreenRecordingFile_ in
+        if let __unwrappedValue = __result {
+          return bridge.create_std__optional_ScreenRecordingFile_(__unwrappedValue)
+        } else {
+          return .init()
+        }
+      }()
+      return bridge.create_Result_std__optional_ScreenRecordingFile__(__resultCpp)
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_std__optional_ScreenRecordingFile__(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func retrieveGlobalRecording(chunkId: bridge.std__optional_std__string_) -> bridge.Result_std__optional_ScreenRecordingFile__ {
+    do {
+      let __result = try self.__implementation.retrieveGlobalRecording(chunkId: { () -> String? in
+        if bridge.has_value_std__optional_std__string_(chunkId) {
+          let __unwrapped = bridge.get_std__optional_std__string_(chunkId)
+          return String(__unwrapped)
+        } else {
+          return nil
+        }
+      }())
       let __resultCpp = { () -> bridge.std__optional_ScreenRecordingFile_ in
         if let __unwrappedValue = __result {
           return bridge.create_std__optional_ScreenRecordingFile_(__unwrappedValue)

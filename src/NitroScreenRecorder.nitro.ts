@@ -75,11 +75,14 @@ export interface NitroScreenRecorder
   stopGlobalRecording(
     settledTimeMs: number
   ): Promise<ScreenRecordingFile | undefined>;
-  markChunkStart(): void;
+  markChunkStart(chunkId: string | undefined): void;
   finalizeChunk(
     settledTimeMs: number
   ): Promise<ScreenRecordingFile | undefined>;
   retrieveLastGlobalRecording(): ScreenRecordingFile | undefined;
+  retrieveGlobalRecording(
+    chunkId: string | undefined
+  ): ScreenRecordingFile | undefined;
 
   // ============================================================================
   // EXTENSION STATUS

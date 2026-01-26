@@ -120,7 +120,7 @@ abstract class HybridNitroScreenRecorderSpec: HybridObject() {
   
   @DoNotStrip
   @Keep
-  abstract fun markChunkStart(): Unit
+  abstract fun markChunkStart(chunkId: String?): Unit
   
   @DoNotStrip
   @Keep
@@ -129,6 +129,10 @@ abstract class HybridNitroScreenRecorderSpec: HybridObject() {
   @DoNotStrip
   @Keep
   abstract fun retrieveLastGlobalRecording(): ScreenRecordingFile?
+  
+  @DoNotStrip
+  @Keep
+  abstract fun retrieveGlobalRecording(chunkId: String?): ScreenRecordingFile?
   
   @DoNotStrip
   @Keep

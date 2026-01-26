@@ -289,7 +289,11 @@ export default function App() {
     }
 
     console.log('📦 Finalizing chunk...');
+    const t0 = performance.now();
     const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 1000 });
+    console.log(
+      `📦 finalizeChunk took ${(performance.now() - t0).toFixed(0)}ms`
+    );
 
     if (file) {
       const newChunk: Chunk = {
@@ -337,6 +341,607 @@ export default function App() {
     ScreenRecorder.clearCache();
     console.log('🗑️ Chunks cleared');
   };
+
+  // ============================================================================
+  // STRESS TESTS
+  // ============================================================================
+
+  const [isStressTesting, setIsStressTesting] = useState(false);
+
+  const stressTestRapidChunks = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    console.log('🧪 Stress Test: Rapid Chunk Cycling');
+    const results: { id: string; success: boolean; duration?: number }[] = [];
+
+    for (let i = 1; i <= 5; i++) {
+      const chunkId = `rapid-${i}`;
+      console.log(`   Starting chunk ${chunkId}...`);
+      ScreenRecorder.markChunkStart(chunkId);
+
+      // Short recording (1 second)
+      await new Promise((r) => setTimeout(r, 1500));
+
+      const t0 = performance.now();
+      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const elapsed = (performance.now() - t0).toFixed(0);
+      results.push({ id: chunkId, success: !!file, duration: file?.duration });
+      console.log(
+        `   Chunk ${chunkId}: ${file ? '✅' : '❌'} (${file?.duration?.toFixed(1) ?? 0}s) [${elapsed}ms]`
+      );
+    }
+
+    const passed = results.filter((r) => r.success).length;
+    setIsStressTesting(false);
+    Alert.alert('Rapid Chunks', `${passed}/5 chunks retrieved successfully`);
+  }, [isRecording]);
+
+  const stressTestDuplicateId = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    console.log('🧪 Stress Test: Duplicate ID');
+
+    // First recording with ID "duplicate-test"
+    ScreenRecorder.markChunkStart('duplicate-test');
+    await new Promise((r) => setTimeout(r, 1000));
+    await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+
+    // Second recording with SAME ID
+    ScreenRecorder.markChunkStart('duplicate-test');
+    await new Promise((r) => setTimeout(r, 2000)); // Longer, different duration
+    const t0 = performance.now();
+    const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+    console.log(
+      `   finalizeChunk took ${(performance.now() - t0).toFixed(0)}ms`
+    );
+
+    // Should get the SECOND recording (newer), not the first
+    const isLonger = file && file.duration > 1.5;
+    console.log(`   Duration: ${file?.duration?.toFixed(1)}s (expected >1.5s)`);
+
+    setIsStressTesting(false);
+    Alert.alert(
+      'Duplicate ID Test',
+      isLonger ? '✅ Got newer recording' : '❌ Got older recording or none'
+    );
+  }, [isRecording]);
+
+  const stressTestMissingId = useCallback(async () => {
+    console.log('🧪 Stress Test: Missing ID');
+
+    const file = ScreenRecorder.retrieveGlobalRecording(
+      'this-id-does-not-exist'
+    );
+
+    if (file === null || file === undefined) {
+      console.log('   ✅ Correctly returned nil for missing ID');
+      Alert.alert('Missing ID Test', '✅ Correctly returned nil');
+    } else {
+      console.log('   ❌ Unexpectedly returned a file!');
+      Alert.alert('Missing ID Test', '❌ Should have returned nil');
+    }
+  }, []);
+
+  const stressTestAudioPairing = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    console.log('🧪 Stress Test: Audio Pairing');
+    const results: {
+      id: string;
+      videoDuration: number;
+      audioDuration: number;
+      match: boolean;
+    }[] = [];
+
+    for (let i = 1; i <= 3; i++) {
+      const chunkId = `audio-${i}`;
+      ScreenRecorder.markChunkStart(chunkId);
+
+      // Different durations for each chunk
+      await new Promise((r) => setTimeout(r, 1000 * i));
+
+      const t0 = performance.now();
+      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const elapsed = (performance.now() - t0).toFixed(0);
+
+      if (file && file.audioFile) {
+        const videoDur = file.duration;
+        const audioDur = file.audioFile.duration;
+        // Audio should roughly match video duration (within 0.5s)
+        const match = Math.abs(videoDur - audioDur) < 0.5;
+        results.push({
+          id: chunkId,
+          videoDuration: videoDur,
+          audioDuration: audioDur,
+          match,
+        });
+        console.log(
+          `   ${chunkId}: video=${videoDur.toFixed(1)}s, audio=${audioDur.toFixed(1)}s ${match ? '✅' : '❌'} [${elapsed}ms]`
+        );
+      }
+    }
+
+    const passed = results.filter((r) => r.match).length;
+    setIsStressTesting(false);
+    Alert.alert(
+      'Audio Pairing',
+      `${passed}/${results.length} audio files match video duration`
+    );
+  }, [isRecording]);
+
+  const stressTestLongRecording = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    console.log('🧪 Stress Test: Long Recording (10s)');
+
+    ScreenRecorder.markChunkStart('long-recording');
+    console.log('   Recording for 10 seconds...');
+
+    await new Promise((r) => setTimeout(r, 10000));
+
+    console.log('   Finalizing...');
+    const t0 = performance.now();
+    const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+    const elapsed = (performance.now() - t0).toFixed(0);
+
+    setIsStressTesting(false);
+
+    if (file) {
+      console.log(`   ✅ Got file in ${elapsed}ms`);
+      console.log(`   Duration: ${file.duration.toFixed(1)}s`);
+      console.log(`   Size: ${(file.size / 1024 / 1024).toFixed(2)} MB`);
+      Alert.alert(
+        'Long Recording',
+        `✅ ${file.duration.toFixed(1)}s, ${(file.size / 1024 / 1024).toFixed(2)} MB\nFinalized in ${elapsed}ms`
+      );
+    } else {
+      console.log(`   ❌ No file returned after ${elapsed}ms`);
+      Alert.alert('Long Recording', `❌ No file returned after ${elapsed}ms`);
+    }
+  }, [isRecording]);
+
+  const stressTestRaceCondition = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    console.log('🧪 Stress Test: Race Conditions');
+    const results: { test: string; passed: boolean; detail: string }[] = [];
+
+    // Test 1: Start Q2 before Q1's finalizeChunk completes
+    console.log('   Test 1: Overlapping mark/finalize');
+    ScreenRecorder.markChunkStart('race-q1');
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // Start finalizing Q1, but DON'T await yet
+    const q1Promise = ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+
+    // Immediately start Q2 (race condition scenario)
+    ScreenRecorder.markChunkStart('race-q2');
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // Now await Q1
+    const q1File = await q1Promise;
+    const q1Passed = q1File !== null && q1File.duration > 1;
+    results.push({
+      test: 'Overlapping mark/finalize',
+      passed: q1Passed,
+      detail: q1File ? `Q1: ${q1File.duration.toFixed(1)}s` : 'Q1: null',
+    });
+    console.log(
+      `   Q1 result: ${q1Passed ? '✅' : '❌'} ${q1File?.duration?.toFixed(1) ?? 'null'}s`
+    );
+
+    // Finalize Q2
+    const t0 = performance.now();
+    const q2File = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+    const q2Elapsed = (performance.now() - t0).toFixed(0);
+    const q2Passed = q2File !== null && q2File.duration > 1;
+    results.push({
+      test: 'Q2 after overlap',
+      passed: q2Passed,
+      detail: q2File
+        ? `Q2: ${q2File.duration.toFixed(1)}s [${q2Elapsed}ms]`
+        : 'Q2: null',
+    });
+    console.log(
+      `   Q2 result: ${q2Passed ? '✅' : '❌'} ${q2File?.duration?.toFixed(1) ?? 'null'}s [${q2Elapsed}ms]`
+    );
+
+    // Test 2: Concurrent finalizeChunk calls (should be rejected)
+    console.log('   Test 2: Concurrent finalizeChunk (should reject second)');
+    ScreenRecorder.markChunkStart('race-concurrent');
+    await new Promise((r) => setTimeout(r, 1000));
+
+    // Fire two finalizeChunks at once
+    const [f1, f2] = await Promise.all([
+      ScreenRecorder.finalizeChunk({ settledTimeMs: 500 }),
+      ScreenRecorder.finalizeChunk({ settledTimeMs: 500 }),
+    ]);
+
+    const bothSucceeded = f1 !== null && f2 !== null;
+    results.push({
+      test: 'Concurrent finalizeChunk',
+      passed: !bothSucceeded, // Pass if second was rejected OR only one succeeded
+      detail: `f1: ${f1 ? 'file' : 'null'}, f2: ${f2 ? 'file' : 'null'}`,
+    });
+    console.log(
+      `   Concurrent result: f1=${f1 ? '✅' : '❌'}, f2=${f2 ? '✅' : '❌'} (expect one null)`
+    );
+
+    // Test 3: Rapid fire (no await between cycles)
+    console.log('   Test 3: Rapid fire mark/finalize');
+    const rapidResults: boolean[] = [];
+    for (let i = 0; i < 3; i++) {
+      ScreenRecorder.markChunkStart(`rapid-race-${i}`);
+      await new Promise((r) => setTimeout(r, 800));
+      const t1 = performance.now();
+      const f = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const e = (performance.now() - t1).toFixed(0);
+      rapidResults.push(f !== null);
+      console.log(`   rapid-${i}: ${f ? '✅' : '❌'} [${e}ms]`);
+    }
+    results.push({
+      test: 'Rapid fire',
+      passed: rapidResults.every((r) => r),
+      detail: `${rapidResults.filter((r) => r).length}/3 succeeded`,
+    });
+
+    setIsStressTesting(false);
+    Alert.alert(
+      'Race Conditions',
+      results
+        .map((r) => `${r.passed ? '✅' : '❌'} ${r.test}: ${r.detail}`)
+        .join('\n')
+    );
+  }, [isRecording]);
+
+  const stressTestAudioMismatch = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    console.log('🧪 Stress Test: Aggressive Audio Mismatch Detection');
+    console.log('   Recording 5 chunks with DISTINCT durations...');
+
+    // Each chunk has a unique duration so we can detect mismatches
+    const expectedDurations = [2, 4, 3, 5, 1]; // seconds - intentionally not sequential
+    const results: {
+      chunk: number;
+      expectedDur: number;
+      videoDur: number;
+      audioDur: number;
+      videoMatch: boolean;
+      audioMatch: boolean;
+    }[] = [];
+
+    for (let i = 0; i < expectedDurations.length; i++) {
+      const expectedDur = expectedDurations[i];
+      console.log(`   Chunk ${i + 1}: Recording for ${expectedDur}s...`);
+
+      ScreenRecorder.markChunkStart(`mismatch-${i}`);
+      await new Promise((r) => setTimeout(r, expectedDur * 1000));
+
+      const t0 = performance.now();
+      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const elapsed = (performance.now() - t0).toFixed(0);
+
+      if (file) {
+        const videoDur = file.duration;
+        const audioDur = file.audioFile?.duration ?? 0;
+
+        // Video should be within 0.5s of expected
+        const videoMatch = Math.abs(videoDur - expectedDur) < 0.5;
+        // Audio should match video (within 0.3s)
+        const audioMatch = file.audioFile
+          ? Math.abs(videoDur - audioDur) < 0.3
+          : true; // No audio file is OK if mic not enabled
+
+        results.push({
+          chunk: i + 1,
+          expectedDur,
+          videoDur,
+          audioDur,
+          videoMatch,
+          audioMatch,
+        });
+
+        const status = videoMatch && audioMatch ? '✅' : '❌';
+        console.log(
+          `   Chunk ${i + 1}: ${status} expected=${expectedDur}s, video=${videoDur.toFixed(1)}s, audio=${audioDur.toFixed(1)}s [${elapsed}ms]`
+        );
+
+        if (!videoMatch) {
+          console.log(`      ⚠️ VIDEO MISMATCH: Got wrong chunk!`);
+        }
+        if (!audioMatch && file.audioFile) {
+          console.log(`      ⚠️ AUDIO MISMATCH: Audio doesn't match video!`);
+        }
+      } else {
+        console.log(`   Chunk ${i + 1}: ❌ No file returned [${elapsed}ms]`);
+        results.push({
+          chunk: i + 1,
+          expectedDur,
+          videoDur: 0,
+          audioDur: 0,
+          videoMatch: false,
+          audioMatch: false,
+        });
+      }
+    }
+
+    setIsStressTesting(false);
+
+    const videoMatches = results.filter((r) => r.videoMatch).length;
+    const audioMatches = results.filter((r) => r.audioMatch).length;
+    const allPassed = videoMatches === 5 && audioMatches === 5;
+
+    console.log(`   Summary: Video ${videoMatches}/5, Audio ${audioMatches}/5`);
+
+    Alert.alert(
+      allPassed
+        ? '✅ Audio Mismatch Test Passed'
+        : '❌ Audio Mismatch Test Failed',
+      results
+        .map(
+          (r) =>
+            `Chunk ${r.chunk}: ${r.videoMatch && r.audioMatch ? '✅' : '❌'} ` +
+            `exp=${r.expectedDur}s vid=${r.videoDur.toFixed(1)}s aud=${r.audioDur.toFixed(1)}s`
+        )
+        .join('\n')
+    );
+  }, [isRecording]);
+
+  const stressTestRealisticInterview = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    console.log('🧪 Stress Test: Realistic Interview (5 questions, 3-6s each)');
+
+    // Simulate realistic interview: 5 questions with 3-6 second answers
+    const questionDurations = [4, 5, 3, 6, 4]; // seconds per answer
+    const results: {
+      question: number;
+      expectedDur: number;
+      actualDur: number;
+      audioDur: number;
+      success: boolean;
+      finalizeTime: number;
+    }[] = [];
+
+    for (let i = 0; i < questionDurations.length; i++) {
+      const expectedDur = questionDurations[i];
+      console.log(`   Q${i + 1}: Answering for ${expectedDur}s...`);
+
+      // Start tracking this answer
+      ScreenRecorder.markChunkStart(`interview-q${i + 1}`);
+
+      // Simulate user answering
+      await new Promise((r) => setTimeout(r, expectedDur * 1000));
+
+      // Finalize and submit
+      console.log(`   Q${i + 1}: Submitting answer...`);
+      const t0 = performance.now();
+      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const finalizeTime = performance.now() - t0;
+
+      if (file) {
+        const durationMatch = Math.abs(file.duration - expectedDur) < 0.5;
+        const audioMatch = file.audioFile
+          ? Math.abs(file.duration - file.audioFile.duration) < 0.3
+          : true;
+        const success = durationMatch && audioMatch;
+
+        results.push({
+          question: i + 1,
+          expectedDur,
+          actualDur: file.duration,
+          audioDur: file.audioFile?.duration ?? 0,
+          success,
+          finalizeTime,
+        });
+
+        console.log(
+          `   Q${i + 1}: ${success ? '✅' : '❌'} ` +
+            `${file.duration.toFixed(1)}s video, ${file.audioFile?.duration.toFixed(1) ?? 'n/a'}s audio ` +
+            `[${finalizeTime.toFixed(0)}ms]`
+        );
+      } else {
+        results.push({
+          question: i + 1,
+          expectedDur,
+          actualDur: 0,
+          audioDur: 0,
+          success: false,
+          finalizeTime,
+        });
+        console.log(
+          `   Q${i + 1}: ❌ No file returned [${finalizeTime.toFixed(0)}ms]`
+        );
+      }
+
+      // Brief pause between questions (simulating UI transition)
+      if (i < questionDurations.length - 1) {
+        console.log(`   (transitioning to next question...)`);
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    }
+
+    setIsStressTesting(false);
+
+    const passed = results.filter((r) => r.success).length;
+    const avgFinalizeTime =
+      results.reduce((sum, r) => sum + r.finalizeTime, 0) / results.length;
+
+    console.log(
+      `   Summary: ${passed}/5 passed, avg finalize: ${avgFinalizeTime.toFixed(0)}ms`
+    );
+
+    Alert.alert(
+      passed === 5 ? '✅ Interview Test Passed' : '❌ Interview Test Failed',
+      `${passed}/5 questions succeeded\n` +
+        `Avg finalize time: ${avgFinalizeTime.toFixed(0)}ms\n\n` +
+        results
+          .map(
+            (r) =>
+              `Q${r.question}: ${r.success ? '✅' : '❌'} ${r.actualDur.toFixed(1)}s [${r.finalizeTime.toFixed(0)}ms]`
+          )
+          .join('\n')
+    );
+  }, [isRecording]);
+
+  const stressTestHardMode = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+
+    // Generate 30 random durations between 0.5s and 30s
+    const questionDurations = Array.from(
+      { length: 10 },
+      () => Math.random() * 29.5 + 0.5
+    );
+
+    const totalExpectedTime = questionDurations.reduce((a, b) => a + b, 0);
+    console.log(
+      `🔥 HARD MODE: 30 questions, ~${Math.round(totalExpectedTime)}s total expected`
+    );
+    console.log(
+      `   Durations: ${questionDurations.map((d) => d.toFixed(1)).join(', ')}`
+    );
+
+    const results: {
+      question: number;
+      expectedDur: number;
+      actualDur: number;
+      audioDur: number;
+      success: boolean;
+      finalizeTime: number;
+    }[] = [];
+
+    const testStartTime = performance.now();
+
+    for (let i = 0; i < questionDurations.length; i++) {
+      const expectedDur = questionDurations[i];
+      console.log(
+        `   Q${i + 1}/30: Recording for ${expectedDur.toFixed(1)}s...`
+      );
+
+      // Start tracking this answer
+      ScreenRecorder.markChunkStart(`hardmode-q${i + 1}`);
+
+      // Simulate recording
+      await new Promise((r) => setTimeout(r, expectedDur * 1000));
+
+      // Finalize and submit
+      console.log(`   Q${i + 1}/30: Finalizing...`);
+      const t0 = performance.now();
+      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const finalizeTime = performance.now() - t0;
+
+      if (file) {
+        // Wider tolerance for short recordings (< 2s get ±1s, others get ±0.5s)
+        const tolerance = expectedDur < 2 ? 1.0 : 0.5;
+        const durationMatch = Math.abs(file.duration - expectedDur) < tolerance;
+        const audioMatch = file.audioFile
+          ? Math.abs(file.duration - file.audioFile.duration) < 0.5
+          : true;
+        const success = durationMatch && audioMatch;
+
+        results.push({
+          question: i + 1,
+          expectedDur,
+          actualDur: file.duration,
+          audioDur: file.audioFile?.duration ?? 0,
+          success,
+          finalizeTime,
+        });
+
+        const emoji = success ? '✅' : '❌';
+        const diff = file.duration - expectedDur;
+        const diffStr = diff >= 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1);
+        console.log(
+          `   Q${i + 1}/30: ${emoji} ${file.duration.toFixed(1)}s (${diffStr}s) [${finalizeTime.toFixed(0)}ms]`
+        );
+      } else {
+        results.push({
+          question: i + 1,
+          expectedDur,
+          actualDur: 0,
+          audioDur: 0,
+          success: false,
+          finalizeTime,
+        });
+        console.log(
+          `   Q${i + 1}/30: ❌ No file returned [${finalizeTime.toFixed(0)}ms]`
+        );
+      }
+
+      // Brief pause between questions
+      if (i < questionDurations.length - 1) {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+
+    const testDuration = (performance.now() - testStartTime) / 1000;
+    setIsStressTesting(false);
+
+    const passed = results.filter((r) => r.success).length;
+    const failed = results.filter((r) => !r.success);
+    const avgFinalizeTime =
+      results.reduce((sum, r) => sum + r.finalizeTime, 0) / results.length;
+    const actualDurations = results
+      .map((r) => r.actualDur)
+      .filter((d) => d > 0);
+    const minDur = Math.min(...actualDurations);
+    const maxDur = Math.max(...actualDurations);
+    const avgDur =
+      actualDurations.reduce((a, b) => a + b, 0) / actualDurations.length;
+
+    console.log(`\n🔥 HARD MODE RESULTS:`);
+    console.log(
+      `   Passed: ${passed}/30 (${((passed / 30) * 100).toFixed(0)}%)`
+    );
+    console.log(`   Test duration: ${testDuration.toFixed(0)}s`);
+    console.log(`   Avg finalize: ${avgFinalizeTime.toFixed(0)}ms`);
+    console.log(
+      `   Duration range: ${minDur.toFixed(1)}s - ${maxDur.toFixed(1)}s (avg: ${avgDur.toFixed(1)}s)`
+    );
+
+    if (failed.length > 0) {
+      console.log(
+        `   Failed questions: ${failed.map((f) => f.question).join(', ')}`
+      );
+    }
+
+    Alert.alert(
+      passed >= 25 ? '✅ Hard Mode Passed' : '❌ Hard Mode Failed',
+      `${passed}/30 questions succeeded (${((passed / 30) * 100).toFixed(0)}%)\n` +
+        `Test duration: ${testDuration.toFixed(0)}s\n` +
+        `Avg finalize: ${avgFinalizeTime.toFixed(0)}ms\n` +
+        `Duration range: ${minDur.toFixed(1)}s - ${maxDur.toFixed(1)}s\n\n` +
+        (failed.length > 0
+          ? `Failed: Q${failed.map((f) => f.question).join(', Q')}`
+          : 'All questions passed!')
+    );
+  }, [isRecording]);
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -557,6 +1162,138 @@ export default function App() {
             <Text style={styles.buttonText}>🗑 Clear All Chunks</Text>
           </TouchableOpacity>
         )}
+      </View>
+
+      {/* Stress Tests Section */}
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>🧪 Stress Tests</Text>
+        <Text style={styles.description}>
+          Run these while global recording is active to test chunk ID matching.
+        </Text>
+
+        <View style={styles.stressTestGrid}>
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestRapidChunks}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>
+              {isStressTesting ? '⏳' : '⚡'} Rapid Chunks
+            </Text>
+            <Text style={styles.stressTestSubtext}>5 quick cycles</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestDuplicateId}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>🔄 Duplicate ID</Text>
+            <Text style={styles.stressTestSubtext}>Same ID twice</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              isStressTesting && styles.disabledButton,
+            ]}
+            onPress={stressTestMissingId}
+            disabled={isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>❓ Missing ID</Text>
+            <Text style={styles.stressTestSubtext}>Non-existent chunk</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestAudioPairing}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>🎵 Audio Pairing</Text>
+            <Text style={styles.stressTestSubtext}>3 chunks with audio</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestLongRecording}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>
+              {isStressTesting ? '⏳' : '🎬'} Long Recording
+            </Text>
+            <Text style={styles.stressTestSubtext}>10 second chunk</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestRaceCondition}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>
+              {isStressTesting ? '⏳' : '🏁'} Race Conditions
+            </Text>
+            <Text style={styles.stressTestSubtext}>Overlap + concurrent</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestAudioMismatch}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>
+              {isStressTesting ? '⏳' : '🔊'} Audio Mismatch
+            </Text>
+            <Text style={styles.stressTestSubtext}>
+              5 chunks, distinct durations
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestRealisticInterview}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>
+              {isStressTesting ? '⏳' : '🎤'} Interview Sim
+            </Text>
+            <Text style={styles.stressTestSubtext}>5 questions, 3-6s each</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestHardMode}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>
+              {isStressTesting ? '⏳' : '🔥'} Hard Mode
+            </Text>
+            <Text style={styles.stressTestSubtext}>30 Q, 0.5s-30s each</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* In-App Recording Section */}
@@ -814,5 +1551,30 @@ const styles = StyleSheet.create({
     height: 200,
     width: '100%',
     borderRadius: 12,
+  },
+  stressTestGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  stressTestButton: {
+    backgroundColor: '#2C2C2E',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    width: '47%',
+    borderWidth: 1,
+    borderColor: '#48484A',
+  },
+  stressTestButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  stressTestSubtext: {
+    color: '#8E8E93',
+    fontSize: 11,
+    marginTop: 4,
   },
 });
