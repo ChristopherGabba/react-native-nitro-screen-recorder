@@ -92,6 +92,22 @@ export interface NitroScreenRecorder
   isScreenBeingRecorded(): boolean;
 
   // ============================================================================
+  // EXTENSION LOGS (iOS only - for debugging broadcast extension)
+  // ============================================================================
+
+  /**
+   * Returns logs from the broadcast extension for debugging.
+   * @platform iOS-only
+   */
+  getExtensionLogs(): string[];
+
+  /**
+   * Clears all extension logs from UserDefaults.
+   * @platform iOS-only
+   */
+  clearExtensionLogs(): void;
+
+  // ============================================================================
   // UTILITIES
   // ============================================================================
 

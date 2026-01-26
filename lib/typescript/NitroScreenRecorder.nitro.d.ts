@@ -32,6 +32,16 @@ export interface NitroScreenRecorder extends HybridObject<{
     retrieveGlobalRecording(chunkId: string | undefined): ScreenRecordingFile | undefined;
     getExtensionStatus(): RawExtensionStatus;
     isScreenBeingRecorded(): boolean;
+    /**
+     * Returns logs from the broadcast extension for debugging.
+     * @platform iOS-only
+     */
+    getExtensionLogs(): string[];
+    /**
+     * Clears all extension logs from UserDefaults.
+     * @platform iOS-only
+     */
+    clearExtensionLogs(): void;
     clearRecordingCache(): void;
 }
 //# sourceMappingURL=NitroScreenRecorder.nitro.d.ts.map

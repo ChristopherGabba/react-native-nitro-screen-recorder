@@ -45,6 +45,7 @@ namespace margelo::nitro::nitroscreenrecorder { struct RawExtensionStatus; }
 #include "RecordingError.hpp"
 #include <string>
 #include "RawExtensionStatus.hpp"
+#include <vector>
 
 namespace margelo::nitro::nitroscreenrecorder {
 
@@ -96,6 +97,8 @@ namespace margelo::nitro::nitroscreenrecorder {
       virtual std::optional<ScreenRecordingFile> retrieveGlobalRecording(const std::optional<std::string>& chunkId) = 0;
       virtual RawExtensionStatus getExtensionStatus() = 0;
       virtual bool isScreenBeingRecorded() = 0;
+      virtual std::vector<std::string> getExtensionLogs() = 0;
+      virtual void clearExtensionLogs() = 0;
       virtual void clearRecordingCache() = 0;
 
     protected:

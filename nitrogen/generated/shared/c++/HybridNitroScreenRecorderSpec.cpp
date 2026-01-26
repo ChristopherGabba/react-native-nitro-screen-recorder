@@ -33,6 +33,8 @@ namespace margelo::nitro::nitroscreenrecorder {
       prototype.registerHybridMethod("retrieveGlobalRecording", &HybridNitroScreenRecorderSpec::retrieveGlobalRecording);
       prototype.registerHybridMethod("getExtensionStatus", &HybridNitroScreenRecorderSpec::getExtensionStatus);
       prototype.registerHybridMethod("isScreenBeingRecorded", &HybridNitroScreenRecorderSpec::isScreenBeingRecorded);
+      prototype.registerHybridMethod("getExtensionLogs", &HybridNitroScreenRecorderSpec::getExtensionLogs);
+      prototype.registerHybridMethod("clearExtensionLogs", &HybridNitroScreenRecorderSpec::clearExtensionLogs);
       prototype.registerHybridMethod("clearRecordingCache", &HybridNitroScreenRecorderSpec::clearRecordingCache);
     });
   }

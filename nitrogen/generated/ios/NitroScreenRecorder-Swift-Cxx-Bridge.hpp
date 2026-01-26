@@ -55,6 +55,7 @@ namespace NitroScreenRecorder { class HybridNitroScreenRecorderSpec_cxx; }
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 /**
  * Contains specialized versions of C++ templated types so they can be accessed from Swift,
@@ -334,6 +335,17 @@ namespace margelo::nitro::nitroscreenrecorder::bridge::swift {
     return *optional;
   }
   
+  // pragma MARK: std::vector<std::string>
+  /**
+   * Specialized version of `std::vector<std::string>`.
+   */
+  using std__vector_std__string_ = std::vector<std::string>;
+  inline std::vector<std::string> create_std__vector_std__string_(size_t size) noexcept {
+    std::vector<std::string> vector;
+    vector.reserve(size);
+    return vector;
+  }
+  
   // pragma MARK: std::shared_ptr<HybridNitroScreenRecorderSpec>
   /**
    * Specialized version of `std::shared_ptr<HybridNitroScreenRecorderSpec>`.
@@ -425,6 +437,15 @@ namespace margelo::nitro::nitroscreenrecorder::bridge::swift {
   }
   inline Result_bool_ create_Result_bool_(const std::exception_ptr& error) noexcept {
     return Result<bool>::withError(error);
+  }
+  
+  // pragma MARK: Result<std::vector<std::string>>
+  using Result_std__vector_std__string__ = Result<std::vector<std::string>>;
+  inline Result_std__vector_std__string__ create_Result_std__vector_std__string__(const std::vector<std::string>& value) noexcept {
+    return Result<std::vector<std::string>>::withValue(value);
+  }
+  inline Result_std__vector_std__string__ create_Result_std__vector_std__string__(const std::exception_ptr& error) noexcept {
+    return Result<std::vector<std::string>>::withError(error);
   }
 
 } // namespace margelo::nitro::nitroscreenrecorder::bridge::swift

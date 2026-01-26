@@ -56,6 +56,7 @@ namespace margelo::nitro::nitroscreenrecorder { enum class CaptureMode; }
 #include "RecordingError.hpp"
 #include "RawExtensionStatus.hpp"
 #include "CaptureMode.hpp"
+#include <vector>
 
 #include "NitroScreenRecorder-Swift-Cxx-Umbrella.hpp"
 
@@ -242,6 +243,20 @@ namespace margelo::nitro::nitroscreenrecorder {
       }
       auto __value = std::move(__result.value());
       return __value;
+    }
+    inline std::vector<std::string> getExtensionLogs() override {
+      auto __result = _swiftPart.getExtensionLogs();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
+    inline void clearExtensionLogs() override {
+      auto __result = _swiftPart.clearExtensionLogs();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
     }
     inline void clearRecordingCache() override {
       auto __result = _swiftPart.clearRecordingCache();

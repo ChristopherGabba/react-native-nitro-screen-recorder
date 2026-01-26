@@ -1238,7 +1238,46 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     safelyClearInAppRecordingFiles()
   }
 
-  // MARK: - Extension Status
+  // MARK: - Extension Status & Logs
+
+  /**
+   Returns logs from the broadcast extension for debugging.
+   Logs are stored in UserDefaults by the extension and retrieved here.
+   Returns an array of log entry strings in format: "[LEVEL] timestamp: message"
+   */
+  func getExtensionLogs() throws -> [String] {
+    guard let appGroupId = try? getAppGroupIdentifier(),
+          let defaults = UserDefaults(suiteName: appGroupId)
+    else {
+      return ["Error: Could not access app group"]
+    }
+    
+    guard let logs = defaults.array(forKey: "ExtensionLogs") as? [[String: Any]] else {
+      return ["No logs available"]
+    }
+    
+    return logs.compactMap { entry in
+      guard let level = entry["level"] as? String,
+            let time = entry["time"] as? String,
+            let message = entry["message"] as? String
+      else { return nil }
+      return "[\(level)] \(time): \(message)"
+    }
+  }
+
+  /**
+   Clears all extension logs from UserDefaults.
+   */
+  func clearExtensionLogs() throws {
+    guard let appGroupId = try? getAppGroupIdentifier(),
+          let defaults = UserDefaults(suiteName: appGroupId)
+    else {
+      return
+    }
+    
+    defaults.removeObject(forKey: "ExtensionLogs")
+    defaults.synchronize()
+  }
 
   /**
    Returns the current status of the broadcast extension by reading from shared UserDefaults.

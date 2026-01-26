@@ -59,6 +59,7 @@ namespace margelo::nitro::nitroscreenrecorder { struct ScreenRecordingFile; }
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 // C++ helpers for Swift
 #include "NitroScreenRecorder-Swift-Cxx-Bridge.hpp"

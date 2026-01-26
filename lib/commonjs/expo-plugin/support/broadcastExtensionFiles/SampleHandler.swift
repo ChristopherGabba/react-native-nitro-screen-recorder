@@ -26,6 +26,53 @@ final class SampleHandler: RPBroadcastSampleHandler {
     return value
   }
 
+  // MARK: - Extension Logging
+  
+  /// Maximum number of log entries to keep (ring buffer)
+  private static let maxLogEntries = 200
+  
+  /// Logs a message to shared UserDefaults for debugging from the main app
+  private func extensionLog(_ message: String, level: String = "INFO") {
+    guard let groupID = hostAppGroupIdentifier,
+          let defaults = UserDefaults(suiteName: groupID)
+    else {
+      debugPrint("[ExtLog] \(message)")  // Fallback to debugPrint
+      return
+    }
+    
+    let timestamp = Date().timeIntervalSince1970
+    let dateFormatter = ISO8601DateFormatter()
+    dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let timeString = dateFormatter.string(from: Date())
+    
+    let entry: [String: Any] = [
+      "timestamp": timestamp,
+      "time": timeString,
+      "level": level,
+      "message": message
+    ]
+    
+    var logs = defaults.array(forKey: "ExtensionLogs") as? [[String: Any]] ?? []
+    logs.append(entry)
+    
+    // Keep only the last N entries (ring buffer)
+    if logs.count > SampleHandler.maxLogEntries {
+      logs = Array(logs.suffix(SampleHandler.maxLogEntries))
+    }
+    
+    defaults.set(logs, forKey: "ExtensionLogs")
+    defaults.synchronize()
+    
+    // Also print for Xcode console when debugging
+    debugPrint("[\(level)] \(message)")
+  }
+  
+  /// Convenience methods for different log levels
+  private func logInfo(_ message: String) { extensionLog(message, level: "INFO") }
+  private func logWarning(_ message: String) { extensionLog(message, level: "WARN") }
+  private func logError(_ message: String) { extensionLog(message, level: "ERROR") }
+  private func logDebug(_ message: String) { extensionLog(message, level: "DEBUG") }
+
   // Store both the CFString and CFNotificationName versions for all notifications
   private static let stopNotificationString = "com.nitroscreenrecorder.stopBroadcast" as CFString
   private static let stopNotificationName = CFNotificationName(stopNotificationString)
@@ -156,6 +203,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
     isBroadcastActive = true
     updateExtensionStatus()
 
+    logInfo("broadcastStarted: Broadcast session starting...")
+
     // Configure audio session for Bluetooth support (AirPods, etc.)
     do {
       let audioSession = AVAudioSession.sharedInstance()
@@ -165,12 +214,13 @@ final class SampleHandler: RPBroadcastSampleHandler {
         options: [.allowBluetooth, .allowBluetoothA2DP, .mixWithOthers]
       )
       try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-      debugPrint("✅ Audio session configured for broadcast with Bluetooth support")
+      logInfo("broadcastStarted: Audio session configured with Bluetooth support")
     } catch {
-      debugPrint("⚠️ Failed to configure audio session: \(error)")
+      logWarning("broadcastStarted: Failed to configure audio session: \(error.localizedDescription)")
     }
 
     guard let groupID = hostAppGroupIdentifier else {
+      logError("broadcastStarted: Missing app group identifier")
       finishBroadcastWithError(
         NSError(
           domain: "SampleHandler",
@@ -185,6 +235,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
     if let userDefaults = UserDefaults(suiteName: groupID) {
       separateAudioFile = userDefaults.bool(forKey: "SeparateAudioFileEnabled")
     }
+
+    logInfo("broadcastStarted: separateAudioFile=\(separateAudioFile), appGroup=\(groupID)")
 
     // Clean up old recordings
     cleanupOldRecordings(in: groupID)
@@ -201,7 +253,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
         separateAudioFile: separateAudioFile
       )
       try writer?.start()
+      logInfo("broadcastStarted: Writer started successfully, output=\(nodeURL.lastPathComponent)")
     } catch {
+      logError("broadcastStarted: Failed to create/start writer: \(error.localizedDescription)")
       finishBroadcastWithError(error)
     }
   }
@@ -235,21 +289,50 @@ final class SampleHandler: RPBroadcastSampleHandler {
     }
   }
 
+  // Track frames per writer for debugging
+  private var videoFramesThisWriter: Int = 0
+  private var lastVideoFrameTime: Date?
+  private var totalVideoFrames: Int = 0
+
   override func processSampleBuffer(
     _ sampleBuffer: CMSampleBuffer,
     with sampleBufferType: RPSampleBufferType
   ) {
     // Use sync to ensure thread safety with writer swaps
     writerQueue.sync {
-      guard let writer = self.writer else { return }
+      guard let writer = self.writer else {
+        // Log if we're dropping frames because writer is nil
+        if sampleBufferType == .video {
+          self.logWarning("processSampleBuffer: VIDEO frame dropped - writer is nil!")
+        }
+        return
+      }
 
       if sampleBufferType == .audioMic {
         self.sawMicBuffers = true
       }
 
-      // Update status periodically (not every frame)
+      // Track and log video frames for debugging
       if sampleBufferType == .video {
+        self.totalVideoFrames += 1
+        self.videoFramesThisWriter += 1
         self.frameCount += 1
+        
+        // Check for gap in frame delivery
+        let now = Date()
+        if let lastTime = self.lastVideoFrameTime {
+          let gap = now.timeIntervalSince(lastTime)
+          if gap > 0.5 {  // Log if gap > 500ms
+            self.logWarning("processSampleBuffer: VIDEO RESUMED after \(Int(gap * 1000))ms gap (total frames: \(self.totalVideoFrames))")
+          }
+        }
+        self.lastVideoFrameTime = now
+        
+        // Log first frame for this writer
+        if self.videoFramesThisWriter == 1 {
+          self.logInfo("processSampleBuffer: FIRST VIDEO FRAME for writer #\(self.totalVideoFrames) total")
+        }
+        
         if self.frameCount >= self.statusUpdateInterval {
           self.frameCount = 0
           self.updateExtensionStatus()
@@ -257,8 +340,12 @@ final class SampleHandler: RPBroadcastSampleHandler {
       }
 
       do {
-        _ = try writer.processSampleBuffer(sampleBuffer, with: sampleBufferType)
+        let success = try writer.processSampleBuffer(sampleBuffer, with: sampleBufferType)
+        if sampleBufferType == .video && !success && self.videoFramesThisWriter <= 3 {
+          self.logWarning("processSampleBuffer: Video frame \(self.videoFramesThisWriter) NOT appended")
+        }
       } catch {
+        self.logError("processSampleBuffer: Error - \(error.localizedDescription)")
         self.finishBroadcastWithError(error)
       }
     }
@@ -296,37 +383,50 @@ final class SampleHandler: RPBroadcastSampleHandler {
    Captures the chunkId from UserDefaults at the START of this chunk.
    */
   // Debounce tracking for duplicate notification protection
-  private var lastMarkChunkTime: TimeInterval = 0
-  private var lastFinalizeChunkTime: TimeInterval = 0
-  private let debounceThreshold: TimeInterval = 0.1  // 100ms debounce
+  // We track ARRIVAL time (before sync) to properly debounce even when lock contention delays processing
+  private var lastMarkChunkArrivalTime: TimeInterval = 0
+  private var lastFinalizeChunkArrivalTime: TimeInterval = 0
+  private let debounceThreshold: TimeInterval = 0.15  // 150ms debounce (accounts for 50ms notification delay + margin)
 
   private func handleMarkChunk() {
+    // Capture arrival time BEFORE entering sync to properly debounce duplicate notifications
+    // (notifications are sent twice 50ms apart for reliability, but we only want to process once)
+    let arrivalTime = Date().timeIntervalSince1970
+    let markStartTime = Date()
+    
     writerQueue.sync {
-      // Debounce: ignore if called within 100ms of last call
-      let now = Date().timeIntervalSince1970
-      if now - self.lastMarkChunkTime < self.debounceThreshold {
-        debugPrint("📍 handleMarkChunk: Ignoring duplicate notification (debounce)")
+      // Debounce: ignore if this notification arrived within threshold of the last one
+      if arrivalTime - self.lastMarkChunkArrivalTime < self.debounceThreshold {
+        self.logDebug("handleMarkChunk: Ignoring duplicate notification (debounce, delta=\(Int((arrivalTime - self.lastMarkChunkArrivalTime) * 1000))ms)")
         return
       }
-      self.lastMarkChunkTime = now
+      self.lastMarkChunkArrivalTime = arrivalTime
 
-      debugPrint("📍 handleMarkChunk: Discarding current chunk and starting fresh")
+      self.logInfo("handleMarkChunk: Discarding chunk (lock wait: \(Int(Date().timeIntervalSince(markStartTime) * 1000))ms, writerFrames: \(self.videoFramesThisWriter), totalFrames: \(self.totalVideoFrames))")
       self.isCapturing = true
       self.chunkStartedAt = Date().timeIntervalSince1970
 
       // Capture chunkId at the START of this chunk (before it could be overwritten)
       if let groupID = hostAppGroupIdentifier {
         self.pendingChunkId = UserDefaults(suiteName: groupID)?.string(forKey: "CurrentChunkId")
-        debugPrint("📍 handleMarkChunk: Captured chunkId=\(self.pendingChunkId ?? "nil")")
+        self.logInfo("handleMarkChunk: Captured chunkId=\(self.pendingChunkId ?? "nil")")
       }
 
       // Finish current writer without saving
       if let currentWriter = self.writer {
+        // Check if any frames were received
+        if !currentWriter.hasReceivedVideoFrames {
+          self.logDebug("handleMarkChunk: Previous writer had no frames, canceling")
+        } else {
+          self.logDebug("handleMarkChunk: Discarding writer with frames")
+        }
+        
         do {
           _ = try currentWriter.finishWithAudio()
-          debugPrint("📍 handleMarkChunk: Previous writer finished (discarded)")
+          self.logInfo("handleMarkChunk: Previous writer finished (discarded)")
         } catch {
-          debugPrint("⚠️ handleMarkChunk: Error finishing previous writer: \(error)")
+          // Expected if no frames - writer was cancelled
+          self.logDebug("handleMarkChunk: Previous writer cancelled/failed (expected if empty)")
         }
       }
 
@@ -337,7 +437,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
       // Create new writer with fresh file URLs
       self.createNewWriter()
-      debugPrint("📍 handleMarkChunk: New chunk started")
+      let totalTime = Int(Date().timeIntervalSince(markStartTime) * 1000)
+      self.logInfo("handleMarkChunk: New chunk started (total lock time: \(totalTime)ms)")
     }
   }
 
@@ -346,11 +447,14 @@ final class SampleHandler: RPBroadcastSampleHandler {
    The saved file can be retrieved by the main app.
    */
   private func handleFinalizeChunk() {
+    // Capture arrival time BEFORE entering sync to properly debounce duplicate notifications
+    let arrivalTime = Date().timeIntervalSince1970
+    let finalizeStartTime = Date()
+    
     writerQueue.sync {
-      // Debounce: ignore if called within 100ms of last call
-      let now = Date().timeIntervalSince1970
-      if now - self.lastFinalizeChunkTime < self.debounceThreshold {
-        debugPrint("📦 handleFinalizeChunk: Ignoring duplicate notification (debounce)")
+      // Debounce: ignore if this notification arrived within threshold of the last one
+      if arrivalTime - self.lastFinalizeChunkArrivalTime < self.debounceThreshold {
+        self.logDebug("handleFinalizeChunk: Ignoring duplicate notification (debounce, delta=\(Int((arrivalTime - self.lastFinalizeChunkArrivalTime) * 1000))ms)")
         // Still send notification so main app doesn't hang on the duplicate call
         let notif = "com.nitroscreenrecorder.chunkSaved" as CFString
         CFNotificationCenterPostNotification(
@@ -362,9 +466,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
         )
         return
       }
-      self.lastFinalizeChunkTime = now
+      self.lastFinalizeChunkArrivalTime = arrivalTime
 
-      debugPrint("📦 handleFinalizeChunk: Saving current chunk and starting fresh")
+      self.logInfo("handleFinalizeChunk: Saving current chunk, chunkId=\(self.pendingChunkId ?? "nil"), frames=\(self.videoFramesThisWriter)")
 
       // Mark capturing as done (will restart with next markChunkStart)
       self.isCapturing = false
@@ -380,13 +484,32 @@ final class SampleHandler: RPBroadcastSampleHandler {
           nil,
           true
         )
-        debugPrint("📤 handleFinalizeChunk: Sent chunkSaved notification")
+        self.logInfo("handleFinalizeChunk: Sent chunkSaved notification")
       }
 
       guard let currentWriter = self.writer else {
-        debugPrint("⚠️ handleFinalizeChunk: No active writer - creating new one")
+        self.logWarning("handleFinalizeChunk: No active writer - creating new one")
         self.createNewWriter()
         sendChunkNotification()  // Notify so main app doesn't hang
+        return
+      }
+
+      // Log detailed writer state before finishing
+      let diagnostics = currentWriter.getDiagnostics()
+      self.logInfo("handleFinalizeChunk: Writer state before finish: \(diagnostics)")
+
+      // Check if writer has received any video frames
+      if !currentWriter.hasReceivedVideoFrames {
+        self.logWarning("handleFinalizeChunk: NO VIDEO FRAMES received (count=\(self.videoFramesThisWriter)) - chunk is empty, skipping save")
+        // Release the writer (it will be cancelled internally)
+        do {
+          _ = try currentWriter.finishWithAudio()
+        } catch {
+          // Expected to fail/cancel - that's fine
+        }
+        self.writer = nil
+        self.createNewWriter()
+        sendChunkNotification()
         return
       }
 
@@ -394,9 +517,26 @@ final class SampleHandler: RPBroadcastSampleHandler {
       let result: BroadcastWriter.FinishResult
       do {
         result = try currentWriter.finishWithAudio()
-        debugPrint("📦 handleFinalizeChunk: Writer finished successfully")
+        self.logInfo("handleFinalizeChunk: Writer finished successfully, video=\(result.videoURL.lastPathComponent)")
+      } catch let writerError as NSError {
+        // Log detailed error info
+        self.logError("handleFinalizeChunk: FAILED - domain=\(writerError.domain), code=\(writerError.code)")
+        self.logError("handleFinalizeChunk: FAILED - \(writerError.localizedDescription)")
+        if let underlyingError = writerError.userInfo[NSUnderlyingErrorKey] as? NSError {
+          self.logError("handleFinalizeChunk: Underlying error - \(underlyingError.localizedDescription)")
+        }
+        // Log writer state after failure
+        let postDiagnostics = currentWriter.getDiagnostics()
+        self.logError("handleFinalizeChunk: Writer state after failure: \(postDiagnostics)")
+        
+        // Release the failed writer explicitly
+        self.writer = nil
+        // Still try to create a new writer so recording can continue
+        self.createNewWriter()
+        sendChunkNotification()  // Notify so main app doesn't hang
+        return
       } catch {
-        debugPrint("❌ handleFinalizeChunk: Error finishing writer: \(error)")
+        self.logError("handleFinalizeChunk: Error finishing writer: \(error.localizedDescription)")
         // Release the failed writer explicitly
         self.writer = nil
         // Still try to create a new writer so recording can continue
@@ -413,7 +553,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
       // Create new writer with fresh file URLs
       self.createNewWriter()
-      debugPrint("📦 handleFinalizeChunk: New chunk started")
+      let totalTime = Int(Date().timeIntervalSince(finalizeStartTime) * 1000)
+      self.logInfo("handleFinalizeChunk: New chunk started (total lock time: \(totalTime)ms)")
     }
   }
 
@@ -428,6 +569,10 @@ final class SampleHandler: RPBroadcastSampleHandler {
     let screen: UIScreen = .main
     var attempts = 0
     let maxAttempts = 3
+    
+    // Reset per-writer frame counter
+    videoFramesThisWriter = 0
+    logDebug("createNewWriter: Starting, screen size=\(screen.bounds.size), scale=\(screen.scale)")
     
     while attempts < maxAttempts {
       attempts += 1
@@ -463,10 +608,10 @@ final class SampleHandler: RPBroadcastSampleHandler {
           separateAudioFile: separateAudioFile
         )
         try writer?.start()
-        debugPrint("✅ createNewWriter: New writer created and started (attempt \(attempts))")
+        logInfo("createNewWriter: New writer created and started (attempt \(attempts)), output=\(nodeURL.lastPathComponent)")
         return  // Success, exit
       } catch {
-        debugPrint("❌ createNewWriter: Attempt \(attempts)/\(maxAttempts) failed: \(error)")
+        logError("createNewWriter: Attempt \(attempts)/\(maxAttempts) failed: \(error.localizedDescription)")
         writer = nil
         
         if attempts < maxAttempts {
@@ -476,7 +621,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
       }
     }
     
-    debugPrint("❌ createNewWriter: All \(maxAttempts) attempts failed - writer is nil")
+    logError("createNewWriter: All \(maxAttempts) attempts failed - writer is nil")
   }
 
   /**
@@ -495,13 +640,21 @@ final class SampleHandler: RPBroadcastSampleHandler {
         nil,
         true
       )
-      debugPrint("📤 saveChunkToContainer: Sent chunkSaved notification")
+      self.logInfo("saveChunkToContainer: Sent chunkSaved notification")
     }
+    
+    // Log video file info
+    let videoExists = fileManager.fileExists(atPath: result.videoURL.path)
+    var videoSize: Int64 = 0
+    if let attrs = try? fileManager.attributesOfItem(atPath: result.videoURL.path) {
+      videoSize = (attrs[.size] as? Int64) ?? 0
+    }
+    self.logInfo("saveChunkToContainer: Video file exists=\(videoExists), size=\(videoSize) bytes, path=\(result.videoURL.lastPathComponent)")
     
     guard let groupID = hostAppGroupIdentifier,
       let defaults = UserDefaults(suiteName: groupID)
     else {
-      debugPrint("⚠️ saveChunkToContainer: No app group identifier")
+      self.logError("saveChunkToContainer: No app group identifier")
       sendChunkNotification()  // Still notify so main app doesn't hang
       return
     }
@@ -512,7 +665,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         .containerURL(forSecurityApplicationGroupIdentifier: groupID)?
         .appendingPathComponent("Library/Documents/", isDirectory: true)
     else {
-      debugPrint("⚠️ saveChunkToContainer: Could not get container URL")
+      self.logError("saveChunkToContainer: Could not get container URL")
       sendChunkNotification()
       return
     }
@@ -521,7 +674,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     do {
       try fileManager.createDirectory(at: containerURL, withIntermediateDirectories: true)
     } catch {
-      debugPrint("⚠️ saveChunkToContainer: Could not create directory: \(error)")
+      self.logError("saveChunkToContainer: Could not create directory: \(error.localizedDescription)")
       sendChunkNotification()
       return
     }
@@ -529,10 +682,22 @@ final class SampleHandler: RPBroadcastSampleHandler {
     // Move video file to shared container
     let videoDestination = containerURL.appendingPathComponent(result.videoURL.lastPathComponent)
     do {
+      // Check if destination already exists and remove it
+      if fileManager.fileExists(atPath: videoDestination.path) {
+        self.logWarning("saveChunkToContainer: Destination file already exists, removing")
+        try fileManager.removeItem(at: videoDestination)
+      }
       try fileManager.moveItem(at: result.videoURL, to: videoDestination)
-      debugPrint("✅ saveChunkToContainer: Video saved to \(videoDestination.lastPathComponent)")
+      
+      // Verify the move succeeded
+      let destExists = fileManager.fileExists(atPath: videoDestination.path)
+      var destSize: Int64 = 0
+      if let attrs = try? fileManager.attributesOfItem(atPath: videoDestination.path) {
+        destSize = (attrs[.size] as? Int64) ?? 0
+      }
+      self.logInfo("saveChunkToContainer: Video moved to container, exists=\(destExists), size=\(destSize) bytes")
     } catch {
-      debugPrint("❌ saveChunkToContainer: Failed to move video: \(error)")
+      self.logError("saveChunkToContainer: Failed to move video: \(error.localizedDescription)")
       sendChunkNotification()  // Notify even on failure
       return
     }
@@ -544,9 +709,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
       do {
         try fileManager.moveItem(at: audioURL, to: audioDestination)
         micAudioFileName = audioDestination.lastPathComponent
-        debugPrint("✅ saveChunkToContainer: Mic audio saved: \(micAudioFileName!)")
+        self.logInfo("saveChunkToContainer: Mic audio saved: \(micAudioFileName!)")
       } catch {
-        debugPrint("⚠️ saveChunkToContainer: Failed to move mic audio: \(error)")
+        self.logWarning("saveChunkToContainer: Failed to move mic audio: \(error.localizedDescription)")
       }
     }
 
@@ -557,9 +722,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
       do {
         try fileManager.moveItem(at: appAudioURL, to: appAudioDestination)
         appAudioFileName = appAudioDestination.lastPathComponent
-        debugPrint("✅ saveChunkToContainer: App audio saved: \(appAudioFileName!)")
+        self.logInfo("saveChunkToContainer: App audio saved: \(appAudioFileName!)")
       } catch {
-        debugPrint("⚠️ saveChunkToContainer: Failed to move app audio: \(error)")
+        self.logWarning("saveChunkToContainer: Failed to move app audio: \(error.localizedDescription)")
       }
     }
 
@@ -593,8 +758,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     defaults.set(chunks, forKey: "PendingChunks")
     defaults.synchronize()
 
-    debugPrint("✅ saveChunkToContainer: Added to queue (total: \(chunks.count))")
-    debugPrint("   Entry: \(entry)")
+    self.logInfo("saveChunkToContainer: Added to queue (total: \(chunks.count)), chunkId=\(pendingChunkId ?? "nil"), video=\(videoDestination.lastPathComponent)")
 
     // Clear pendingChunkId for next chunk
     pendingChunkId = nil
@@ -608,11 +772,14 @@ final class SampleHandler: RPBroadcastSampleHandler {
       nil,
       true
     )
-    debugPrint("📤 saveChunkToContainer: Sent chunkSaved notification")
+    self.logInfo("saveChunkToContainer: Sent chunkSaved notification")
   }
 
   override func broadcastFinished() {
+    logInfo("broadcastFinished: Broadcast ending...")
+    
     guard let writer else {
+      logWarning("broadcastFinished: No writer present")
       clearExtensionStatus()
       return
     }
@@ -621,9 +788,11 @@ final class SampleHandler: RPBroadcastSampleHandler {
     let result: BroadcastWriter.FinishResult
     do {
       result = try writer.finishWithAudio()
+      logInfo("broadcastFinished: Writer finished, video=\(result.videoURL.lastPathComponent)")
     } catch {
       // Writer failed, but we can't call finishBroadcastWithError here
       // as we're already in the finish process
+      logError("broadcastFinished: Failed to finish writer: \(error.localizedDescription)")
       clearExtensionStatus()
       return
     }

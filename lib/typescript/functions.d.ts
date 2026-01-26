@@ -321,6 +321,35 @@ export declare function getExtensionStatus(): RawExtensionStatus;
  */
 export declare function isScreenBeingRecorded(): boolean;
 /**
+ * Returns logs from the broadcast extension for debugging.
+ * The extension logs key events like chunk creation, writer operations, and errors.
+ * Logs are stored in a ring buffer (max 200 entries) in UserDefaults.
+ *
+ * @platform iOS-only
+ * @returns Array of log strings in format "[LEVEL] timestamp: message"
+ * @example
+ * ```typescript
+ * const logs = getExtensionLogs();
+ * logs.forEach(log => console.log(log));
+ * // Output: "[INFO] 2024-01-15T10:30:00.123Z: handleFinalizeChunk: Writer finished successfully"
+ * ```
+ */
+export declare function getExtensionLogs(): string[];
+/**
+ * Clears all extension logs from UserDefaults.
+ * Call this before starting a recording session to get clean logs.
+ *
+ * @platform iOS-only
+ * @example
+ * ```typescript
+ * clearExtensionLogs();
+ * startGlobalRecording({ onRecordingError: console.error });
+ * // ... recording ...
+ * const logs = getExtensionLogs(); // Fresh logs from this session only
+ * ```
+ */
+export declare function clearExtensionLogs(): void;
+/**
  * Clears all cached recording files to free up storage space.
  * This will delete temporary files but not files that have been explicitly saved.
  *

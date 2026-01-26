@@ -403,6 +403,33 @@ public final class BroadcastWriter {
     // TODO: Resume
   }
 
+  /// Returns diagnostic info about the writer state for debugging
+  public func getDiagnostics() -> String {
+    return assetWriterQueue.sync {
+      var info: [String] = []
+      info.append("status=\(assetWriter.status.description)")
+      if let error = assetWriter.error {
+        info.append("error=\(error.localizedDescription)")
+      }
+      info.append("sessionStarted=\(assetWriterSessionStarted)")
+      info.append("lastVideoPTS=\(lastVideoPTS?.seconds ?? -1)")
+      info.append("lastVideoEndTime=\(lastVideoEndTime.seconds)")
+      info.append("videoInputReady=\(videoInput.isReadyForMoreMediaData)")
+      
+      // Check output file
+      let outputPath = assetWriter.outputURL.path
+      let fileExists = FileManager.default.fileExists(atPath: outputPath)
+      var fileSize: Int64 = 0
+      if fileExists, let attrs = try? FileManager.default.attributesOfItem(atPath: outputPath) {
+        fileSize = (attrs[.size] as? Int64) ?? 0
+      }
+      info.append("outputExists=\(fileExists)")
+      info.append("outputSize=\(fileSize)")
+      
+      return info.joined(separator: ", ")
+    }
+  }
+
   /// Result containing video and optional separate audio URLs
   public struct FinishResult {
     public let videoURL: URL
@@ -415,8 +442,25 @@ public final class BroadcastWriter {
     return result.videoURL
   }
 
+  /// Returns true if the writer has received at least one video frame
+  public var hasReceivedVideoFrames: Bool {
+    return assetWriterQueue.sync { assetWriterSessionStarted }
+  }
+
   public func finishWithAudio() throws -> FinishResult {
     return try assetWriterQueue.sync {
+      // IMPORTANT: If no video frames were ever received, the session was never started.
+      // AVAssetWriter will fail if we try to finish without starting a session.
+      // In this case, cancel the writer and throw a specific error.
+      guard assetWriterSessionStarted else {
+        debugPrint("⚠️ BroadcastWriter: No video frames received, canceling writer")
+        assetWriter.cancelWriting()
+        // Also cancel audio writers
+        separateAudioWriter?.cancelWriting()
+        appAudioWriter?.cancelWriting()
+        throw Error.wrongAssetWriterStatus(.cancelled)
+      }
+
       let group: DispatchGroup = .init()
 
       // Pad audio files with silence to match video length

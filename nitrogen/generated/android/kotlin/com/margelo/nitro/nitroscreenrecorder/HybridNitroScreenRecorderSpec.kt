@@ -144,6 +144,14 @@ abstract class HybridNitroScreenRecorderSpec: HybridObject() {
   
   @DoNotStrip
   @Keep
+  abstract fun getExtensionLogs(): Array<String>
+  
+  @DoNotStrip
+  @Keep
+  abstract fun clearExtensionLogs(): Unit
+  
+  @DoNotStrip
+  @Keep
   abstract fun clearRecordingCache(): Unit
 
   private external fun initHybrid(): HybridData

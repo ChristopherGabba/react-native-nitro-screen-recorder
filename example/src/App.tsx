@@ -330,7 +330,16 @@ export default function App() {
       );
     } else {
       console.log('⚠️ No chunk file returned');
-      Alert.alert('Error', 'Failed to get chunk file');
+      // Dump extension logs on failure for debugging
+      if (Platform.OS === 'ios') {
+        console.log('📜 Extension logs (last 15 entries):');
+        const logs = ScreenRecorder.getExtensionLogs();
+        logs.slice(-15).forEach((log) => console.log(`   ${log}`));
+      }
+      Alert.alert(
+        'Error',
+        'Failed to get chunk file. Check console for extension logs.'
+      );
     }
   }, [isRecording, isChunkingActive, chunkCounter]);
 
@@ -347,6 +356,16 @@ export default function App() {
   // ============================================================================
 
   const [isStressTesting, setIsStressTesting] = useState(false);
+
+  // Extension logs state (iOS only)
+  const [extensionLogs, setExtensionLogs] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+
+  const handleRefreshLogs = useCallback(() => {
+    const logs = ScreenRecorder.getExtensionLogs();
+    setExtensionLogs(logs);
+    console.log(`📜 Loaded ${logs.length} extension logs`);
+  }, []);
 
   const stressTestRapidChunks = useCallback(async () => {
     if (!isRecording) {
@@ -372,10 +391,25 @@ export default function App() {
       console.log(
         `   Chunk ${chunkId}: ${file ? '✅' : '❌'} (${file?.duration?.toFixed(1) ?? 0}s) [${elapsed}ms]`
       );
+
+      // On failure, dump extension logs immediately
+      if (!file && Platform.OS === 'ios') {
+        console.log(`   📜 Extension logs after ${chunkId} failure:`);
+        const logs = ScreenRecorder.getExtensionLogs();
+        logs.slice(-10).forEach((log) => console.log(`      ${log}`));
+      }
     }
 
     const passed = results.filter((r) => r.success).length;
     setIsStressTesting(false);
+
+    // Always dump logs at end if any failures
+    if (passed < 5 && Platform.OS === 'ios') {
+      console.log('📜 Full extension logs:');
+      const logs = ScreenRecorder.getExtensionLogs();
+      logs.forEach((log) => console.log(`   ${log}`));
+    }
+
     Alert.alert('Rapid Chunks', `${passed}/5 chunks retrieved successfully`);
   }, [isRecording]);
 
@@ -467,6 +501,14 @@ export default function App() {
         console.log(
           `   ${chunkId}: video=${videoDur.toFixed(1)}s, audio=${audioDur.toFixed(1)}s ${match ? '✅' : '❌'} [${elapsed}ms]`
         );
+      } else {
+        console.log(`   ${chunkId}: ❌ No file returned [${elapsed}ms]`);
+        // Dump extension logs on failure
+        if (Platform.OS === 'ios') {
+          console.log(`   📜 Extension logs after ${chunkId} failure:`);
+          const logs = ScreenRecorder.getExtensionLogs();
+          logs.slice(-15).forEach((log) => console.log(`      ${log}`));
+        }
       }
     }
 
@@ -508,6 +550,12 @@ export default function App() {
       );
     } else {
       console.log(`   ❌ No file returned after ${elapsed}ms`);
+      // Dump extension logs on failure
+      if (Platform.OS === 'ios') {
+        console.log(`   📜 Extension logs after Long Recording failure:`);
+        const logs = ScreenRecorder.getExtensionLogs();
+        logs.slice(-15).forEach((log) => console.log(`      ${log}`));
+      }
       Alert.alert('Long Recording', `❌ No file returned after ${elapsed}ms`);
     }
   }, [isRecording]);
@@ -673,6 +721,12 @@ export default function App() {
         }
       } else {
         console.log(`   Chunk ${i + 1}: ❌ No file returned [${elapsed}ms]`);
+        // Dump extension logs on failure
+        if (Platform.OS === 'ios') {
+          console.log(`   📜 Extension logs after Chunk ${i + 1} failure:`);
+          const logs = ScreenRecorder.getExtensionLogs();
+          logs.slice(-15).forEach((log) => console.log(`      ${log}`));
+        }
         results.push({
           chunk: i + 1,
           expectedDur,
@@ -774,6 +828,12 @@ export default function App() {
         console.log(
           `   Q${i + 1}: ❌ No file returned [${finalizeTime.toFixed(0)}ms]`
         );
+        // Dump extension logs on failure
+        if (Platform.OS === 'ios') {
+          console.log(`   📜 Extension logs after Q${i + 1} failure:`);
+          const logs = ScreenRecorder.getExtensionLogs();
+          logs.slice(-15).forEach((log) => console.log(`      ${log}`));
+        }
       }
 
       // Brief pause between questions (simulating UI transition)
@@ -813,15 +873,16 @@ export default function App() {
     }
     setIsStressTesting(true);
 
-    // Generate 30 random durations between 0.5s and 30s
+    const numQuestions = 40;
+    // Generate random durations between 0.5s and 15s
     const questionDurations = Array.from(
-      { length: 10 },
-      () => Math.random() * 29.5 + 0.5
+      { length: numQuestions },
+      () => Math.random() * 14.5 + 0.5
     );
 
     const totalExpectedTime = questionDurations.reduce((a, b) => a + b, 0);
     console.log(
-      `🔥 HARD MODE: 30 questions, ~${Math.round(totalExpectedTime)}s total expected`
+      `🔥 HARD MODE: ${numQuestions} questions, ~${Math.round(totalExpectedTime)}s total expected`
     );
     console.log(
       `   Durations: ${questionDurations.map((d) => d.toFixed(1)).join(', ')}`
@@ -833,6 +894,7 @@ export default function App() {
       actualDur: number;
       audioDur: number;
       success: boolean;
+      noFile: boolean;
       finalizeTime: number;
     }[] = [];
 
@@ -841,7 +903,7 @@ export default function App() {
     for (let i = 0; i < questionDurations.length; i++) {
       const expectedDur = questionDurations[i];
       console.log(
-        `   Q${i + 1}/30: Recording for ${expectedDur.toFixed(1)}s...`
+        `   Q${i + 1}/${numQuestions}: Recording for ${expectedDur.toFixed(1)}s...`
       );
 
       // Start tracking this answer
@@ -851,7 +913,7 @@ export default function App() {
       await new Promise((r) => setTimeout(r, expectedDur * 1000));
 
       // Finalize and submit
-      console.log(`   Q${i + 1}/30: Finalizing...`);
+      console.log(`   Q${i + 1}/${numQuestions}: Finalizing...`);
       const t0 = performance.now();
       const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
       const finalizeTime = performance.now() - t0;
@@ -871,6 +933,7 @@ export default function App() {
           actualDur: file.duration,
           audioDur: file.audioFile?.duration ?? 0,
           success,
+          noFile: false,
           finalizeTime,
         });
 
@@ -878,7 +941,7 @@ export default function App() {
         const diff = file.duration - expectedDur;
         const diffStr = diff >= 0 ? `+${diff.toFixed(1)}` : diff.toFixed(1);
         console.log(
-          `   Q${i + 1}/30: ${emoji} ${file.duration.toFixed(1)}s (${diffStr}s) [${finalizeTime.toFixed(0)}ms]`
+          `   Q${i + 1}/${numQuestions}: ${emoji} ${file.duration.toFixed(1)}s (${diffStr}s) [${finalizeTime.toFixed(0)}ms]`
         );
       } else {
         results.push({
@@ -887,11 +950,20 @@ export default function App() {
           actualDur: 0,
           audioDur: 0,
           success: false,
+          noFile: true,
           finalizeTime,
         });
         console.log(
-          `   Q${i + 1}/30: ❌ No file returned [${finalizeTime.toFixed(0)}ms]`
+          `   Q${i + 1}/${numQuestions}: ❌ No file returned [${finalizeTime.toFixed(0)}ms]`
         );
+        // Dump extension logs only when no file returned
+        if (Platform.OS === 'ios') {
+          console.log(
+            `   📜 Extension logs after Q${i + 1} failure (no file):`
+          );
+          const logs = ScreenRecorder.getExtensionLogs();
+          logs.slice(-15).forEach((log) => console.log(`      ${log}`));
+        }
       }
 
       // Brief pause between questions
@@ -905,25 +977,33 @@ export default function App() {
 
     const passed = results.filter((r) => r.success).length;
     const failed = results.filter((r) => !r.success);
+    const noFileCount = results.filter((r) => r.noFile).length;
     const avgFinalizeTime =
       results.reduce((sum, r) => sum + r.finalizeTime, 0) / results.length;
     const actualDurations = results
       .map((r) => r.actualDur)
       .filter((d) => d > 0);
-    const minDur = Math.min(...actualDurations);
-    const maxDur = Math.max(...actualDurations);
+    const minDur =
+      actualDurations.length > 0 ? Math.min(...actualDurations) : 0;
+    const maxDur =
+      actualDurations.length > 0 ? Math.max(...actualDurations) : 0;
     const avgDur =
-      actualDurations.reduce((a, b) => a + b, 0) / actualDurations.length;
+      actualDurations.length > 0
+        ? actualDurations.reduce((a, b) => a + b, 0) / actualDurations.length
+        : 0;
 
     console.log(`\n🔥 HARD MODE RESULTS:`);
     console.log(
-      `   Passed: ${passed}/30 (${((passed / 30) * 100).toFixed(0)}%)`
+      `   Passed: ${passed}/${numQuestions} (${((passed / numQuestions) * 100).toFixed(0)}%)`
     );
+    console.log(`   No file returned: ${noFileCount}`);
     console.log(`   Test duration: ${testDuration.toFixed(0)}s`);
     console.log(`   Avg finalize: ${avgFinalizeTime.toFixed(0)}ms`);
-    console.log(
-      `   Duration range: ${minDur.toFixed(1)}s - ${maxDur.toFixed(1)}s (avg: ${avgDur.toFixed(1)}s)`
-    );
+    if (actualDurations.length > 0) {
+      console.log(
+        `   Duration range: ${minDur.toFixed(1)}s - ${maxDur.toFixed(1)}s (avg: ${avgDur.toFixed(1)}s)`
+      );
+    }
 
     if (failed.length > 0) {
       console.log(
@@ -931,15 +1011,174 @@ export default function App() {
       );
     }
 
+    const passThreshold = Math.floor(numQuestions * 0.8); // 80% pass rate
     Alert.alert(
-      passed >= 25 ? '✅ Hard Mode Passed' : '❌ Hard Mode Failed',
-      `${passed}/30 questions succeeded (${((passed / 30) * 100).toFixed(0)}%)\n` +
+      passed >= passThreshold ? '✅ Hard Mode Passed' : '❌ Hard Mode Failed',
+      `${passed}/${numQuestions} questions succeeded (${((passed / numQuestions) * 100).toFixed(0)}%)\n` +
+        `No file: ${noFileCount}, Duration mismatch: ${failed.length - noFileCount}\n` +
         `Test duration: ${testDuration.toFixed(0)}s\n` +
-        `Avg finalize: ${avgFinalizeTime.toFixed(0)}ms\n` +
-        `Duration range: ${minDur.toFixed(1)}s - ${maxDur.toFixed(1)}s\n\n` +
+        `Avg finalize: ${avgFinalizeTime.toFixed(0)}ms\n\n` +
         (failed.length > 0
           ? `Failed: Q${failed.map((f) => f.question).join(', Q')}`
           : 'All questions passed!')
+    );
+  }, [isRecording]);
+
+  // Faster chunk test - 20 iterations with shorter timing
+  const stressTestFasterChunks = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    console.log('🚀 Stress Test: Faster Chunks (20 iterations, 500ms each)');
+    const results: { id: string; success: boolean; duration?: number }[] = [];
+
+    for (let i = 1; i <= 20; i++) {
+      const chunkId = `fast-${i}`;
+      console.log(`   Starting chunk ${chunkId}...`);
+      ScreenRecorder.markChunkStart(chunkId);
+
+      // Very short recording (500ms)
+      await new Promise((r) => setTimeout(r, 500));
+
+      const t0 = performance.now();
+      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 200 });
+      const elapsed = (performance.now() - t0).toFixed(0);
+      results.push({ id: chunkId, success: !!file, duration: file?.duration });
+      console.log(
+        `   Chunk ${chunkId}: ${file ? '✅' : '❌'} (${file?.duration?.toFixed(2) ?? 0}s) [${elapsed}ms]`
+      );
+
+      if (!file && Platform.OS === 'ios') {
+        console.log(`   📜 Extension logs after ${chunkId} failure:`);
+        const logs = ScreenRecorder.getExtensionLogs();
+        logs.slice(-8).forEach((log) => console.log(`      ${log}`));
+      }
+    }
+
+    const passed = results.filter((r) => r.success).length;
+    setIsStressTesting(false);
+
+    if (passed < 20 && Platform.OS === 'ios') {
+      console.log('📜 Full extension logs:');
+      const logs = ScreenRecorder.getExtensionLogs();
+      logs.forEach((log) => console.log(`   ${log}`));
+    }
+
+    Alert.alert('Faster Chunks', `${passed}/20 chunks retrieved successfully`);
+  }, [isRecording]);
+
+  // Rapid mark spam test - multiple marks before finalize
+  const stressTestMarkSpam = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    console.log('📨 Stress Test: Mark Spam (multiple marks before finalize)');
+    console.log('   Testing that rapid marks are handled without crashing');
+    const results: { round: number; success: boolean; duration?: number }[] =
+      [];
+
+    for (let round = 1; round <= 5; round++) {
+      console.log(`   Round ${round}: Spamming 5 marks rapidly...`);
+
+      // Fire 5 marks rapidly - system should handle this gracefully
+      for (let i = 1; i <= 5; i++) {
+        ScreenRecorder.markChunkStart(`spam-r${round}-m${i}`);
+        await new Promise((r) => setTimeout(r, 10)); // tiny 10ms delay
+      }
+
+      // Record for a bit after the spam
+      await new Promise((r) => setTimeout(r, 800));
+
+      const t0 = performance.now();
+      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 200 });
+      const elapsed = (performance.now() - t0).toFixed(0);
+
+      results.push({
+        round,
+        success: !!file,
+        duration: file?.duration,
+      });
+
+      console.log(
+        `   Round ${round}: ${file ? '✅' : '❌'} (${file?.duration?.toFixed(2) ?? 0}s) [${elapsed}ms]`
+      );
+
+      if (!file && Platform.OS === 'ios') {
+        console.log(`   📜 Extension logs after round ${round} failure:`);
+        const logs = ScreenRecorder.getExtensionLogs();
+        logs.slice(-8).forEach((log) => console.log(`      ${log}`));
+      }
+    }
+
+    const passed = results.filter((r) => r.success).length;
+    setIsStressTesting(false);
+
+    Alert.alert(
+      'Mark Spam Results',
+      `${passed}/5 rounds retrieved successfully\n(5 rapid marks per round)`
+    );
+  }, [isRecording]);
+
+  // No-gap burst test - back-to-back without pause
+  const stressTestNoGapBurst = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    console.log('💥 Stress Test: No-Gap Burst (back-to-back, no pause)');
+    const results: {
+      id: string;
+      success: boolean;
+      duration?: number;
+      finalizeMs: number;
+    }[] = [];
+
+    for (let i = 1; i <= 15; i++) {
+      const chunkId = `burst-${i}`;
+
+      // Mark immediately (no delay from previous finalize)
+      ScreenRecorder.markChunkStart(chunkId);
+
+      // Short recording
+      await new Promise((r) => setTimeout(r, 600));
+
+      const t0 = performance.now();
+      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 150 });
+      const finalizeMs = performance.now() - t0;
+
+      results.push({
+        id: chunkId,
+        success: !!file,
+        duration: file?.duration,
+        finalizeMs,
+      });
+
+      console.log(
+        `   ${chunkId}: ${file ? '✅' : '❌'} (${file?.duration?.toFixed(2) ?? 0}s) [${finalizeMs.toFixed(0)}ms]`
+      );
+
+      // NO delay before next iteration - that's the point of this test
+    }
+
+    const passed = results.filter((r) => r.success).length;
+    const avgFinalize =
+      results.reduce((sum, r) => sum + r.finalizeMs, 0) / results.length;
+    setIsStressTesting(false);
+
+    if (passed < 15 && Platform.OS === 'ios') {
+      console.log('📜 Full extension logs:');
+      const logs = ScreenRecorder.getExtensionLogs();
+      logs.slice(-30).forEach((log) => console.log(`   ${log}`));
+    }
+
+    Alert.alert(
+      'No-Gap Burst',
+      `${passed}/15 chunks retrieved\nAvg finalize: ${avgFinalize.toFixed(0)}ms`
     );
   }, [isRecording]);
 
@@ -1291,10 +1530,108 @@ export default function App() {
             <Text style={styles.stressTestButtonText}>
               {isStressTesting ? '⏳' : '🔥'} Hard Mode
             </Text>
-            <Text style={styles.stressTestSubtext}>30 Q, 0.5s-30s each</Text>
+            <Text style={styles.stressTestSubtext}>40 Q, 0.5s-15s each</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestFasterChunks}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>
+              {isStressTesting ? '⏳' : '🚀'} Faster Chunks
+            </Text>
+            <Text style={styles.stressTestSubtext}>20x 500ms chunks</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestMarkSpam}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>
+              {isStressTesting ? '⏳' : '📨'} Mark Spam
+            </Text>
+            <Text style={styles.stressTestSubtext}>
+              5 marks before finalize
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.stressTestButton,
+              (!isRecording || isStressTesting) && styles.disabledButton,
+            ]}
+            onPress={stressTestNoGapBurst}
+            disabled={!isRecording || isStressTesting}
+          >
+            <Text style={styles.stressTestButtonText}>
+              {isStressTesting ? '⏳' : '💥'} No-Gap Burst
+            </Text>
+            <Text style={styles.stressTestSubtext}>15x back-to-back</Text>
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Extension Logs Section (iOS only) */}
+      {Platform.OS === 'ios' && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>📜 Extension Logs</Text>
+          <Text style={styles.description}>
+            Debug logs from the broadcast extension. Use these to diagnose
+            chunk/export issues.
+          </Text>
+
+          <TouchableOpacity
+            style={[styles.button, { backgroundColor: '#5856D6' }]}
+            onPress={() => {
+              handleRefreshLogs();
+              setShowLogs(true);
+            }}
+          >
+            <Text style={styles.buttonText}>📥 Load Logs</Text>
+          </TouchableOpacity>
+
+          {showLogs && (
+            <View style={styles.logsContainer}>
+              <View style={styles.logsHeader}>
+                <Text style={styles.logsCount}>
+                  {extensionLogs.length} log entries
+                </Text>
+                <TouchableOpacity onPress={handleRefreshLogs}>
+                  <Text style={styles.refreshButton}>🔄 Refresh</Text>
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.logsScroll} nestedScrollEnabled={true}>
+                {extensionLogs.length === 0 ? (
+                  <Text style={styles.logEntry}>
+                    No logs available. Start a recording to generate logs.
+                  </Text>
+                ) : (
+                  extensionLogs.map((log, index) => (
+                    <Text
+                      key={index}
+                      style={[
+                        styles.logEntry,
+                        log.includes('[ERROR]') && styles.logError,
+                        log.includes('[WARN]') && styles.logWarning,
+                      ]}
+                    >
+                      {log}
+                    </Text>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          )}
+        </View>
+      )}
 
       {/* In-App Recording Section */}
       {Platform.OS === 'ios' && (
@@ -1576,5 +1913,47 @@ const styles = StyleSheet.create({
     color: '#8E8E93',
     fontSize: 11,
     marginTop: 4,
+  },
+  // Extension Logs styles
+  logsContainer: {
+    marginTop: 16,
+    backgroundColor: '#0A0A0A',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  logsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#1C1C1E',
+    borderBottomWidth: 1,
+    borderBottomColor: '#2C2C2E',
+  },
+  logsCount: {
+    color: '#8E8E93',
+    fontSize: 12,
+  },
+  refreshButton: {
+    color: '#5856D6',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  logsScroll: {
+    maxHeight: 300,
+    padding: 12,
+  },
+  logEntry: {
+    color: '#C7C7CC',
+    fontSize: 11,
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    marginBottom: 4,
+    lineHeight: 16,
+  },
+  logError: {
+    color: '#FF453A',
+  },
+  logWarning: {
+    color: '#FFD60A',
   },
 });

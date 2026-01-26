@@ -73,6 +73,8 @@ namespace margelo::nitro::nitroscreenrecorder {
     std::optional<ScreenRecordingFile> retrieveGlobalRecording(const std::optional<std::string>& chunkId) override;
     RawExtensionStatus getExtensionStatus() override;
     bool isScreenBeingRecorded() override;
+    std::vector<std::string> getExtensionLogs() override;
+    void clearExtensionLogs() override;
     void clearRecordingCache() override;
 
   private:

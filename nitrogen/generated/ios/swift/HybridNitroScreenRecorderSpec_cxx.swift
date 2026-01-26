@@ -448,6 +448,35 @@ open class HybridNitroScreenRecorderSpec_cxx {
   }
   
   @inline(__always)
+  public final func getExtensionLogs() -> bridge.Result_std__vector_std__string__ {
+    do {
+      let __result = try self.__implementation.getExtensionLogs()
+      let __resultCpp = { () -> bridge.std__vector_std__string_ in
+        var __vector = bridge.create_std__vector_std__string_(__result.count)
+        for __item in __result {
+          __vector.push_back(std.string(__item))
+        }
+        return __vector
+      }()
+      return bridge.create_Result_std__vector_std__string__(__resultCpp)
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_std__vector_std__string__(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
+  public final func clearExtensionLogs() -> bridge.Result_void_ {
+    do {
+      try self.__implementation.clearExtensionLogs()
+      return bridge.create_Result_void_()
+    } catch (let __error) {
+      let __exceptionPtr = __error.toCpp()
+      return bridge.create_Result_void_(__exceptionPtr)
+    }
+  }
+  
+  @inline(__always)
   public final func clearRecordingCache() -> bridge.Result_void_ {
     do {
       try self.__implementation.clearRecordingCache()

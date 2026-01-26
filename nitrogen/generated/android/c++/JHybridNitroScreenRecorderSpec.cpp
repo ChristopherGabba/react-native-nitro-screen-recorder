@@ -50,6 +50,7 @@ namespace margelo::nitro::nitroscreenrecorder { struct RecordingError; }
 #include "JRawExtensionStatus.hpp"
 #include "CaptureMode.hpp"
 #include "JCaptureMode.hpp"
+#include <vector>
 #include "ScreenRecordingEvent.hpp"
 #include <functional>
 #include "JFunc_void_ScreenRecordingEvent.hpp"
@@ -256,6 +257,24 @@ namespace margelo::nitro::nitroscreenrecorder {
     static const auto method = javaClassStatic()->getMethod<jboolean()>("isScreenBeingRecorded");
     auto __result = method(_javaPart);
     return static_cast<bool>(__result);
+  }
+  std::vector<std::string> JHybridNitroScreenRecorderSpec::getExtensionLogs() {
+    static const auto method = javaClassStatic()->getMethod<jni::local_ref<jni::JArrayClass<jni::JString>>()>("getExtensionLogs");
+    auto __result = method(_javaPart);
+    return [&]() {
+      size_t __size = __result->size();
+      std::vector<std::string> __vector;
+      __vector.reserve(__size);
+      for (size_t __i = 0; __i < __size; __i++) {
+        auto __element = __result->getElement(__i);
+        __vector.push_back(__element->toStdString());
+      }
+      return __vector;
+    }();
+  }
+  void JHybridNitroScreenRecorderSpec::clearExtensionLogs() {
+    static const auto method = javaClassStatic()->getMethod<void()>("clearExtensionLogs");
+    method(_javaPart);
   }
   void JHybridNitroScreenRecorderSpec::clearRecordingCache() {
     static const auto method = javaClassStatic()->getMethod<void()>("clearRecordingCache");
