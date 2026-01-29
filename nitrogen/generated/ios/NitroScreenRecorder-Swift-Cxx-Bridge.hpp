@@ -447,5 +447,14 @@ namespace margelo::nitro::nitroscreenrecorder::bridge::swift {
   inline Result_std__vector_std__string__ create_Result_std__vector_std__string__(const std::exception_ptr& error) noexcept {
     return Result<std::vector<std::string>>::withError(error);
   }
+  
+  // pragma MARK: Result<std::string>
+  using Result_std__string_ = Result<std::string>;
+  inline Result_std__string_ create_Result_std__string_(const std::string& value) noexcept {
+    return Result<std::string>::withValue(value);
+  }
+  inline Result_std__string_ create_Result_std__string_(const std::exception_ptr& error) noexcept {
+    return Result<std::string>::withError(error);
+  }
 
 } // namespace margelo::nitro::nitroscreenrecorder::bridge::swift

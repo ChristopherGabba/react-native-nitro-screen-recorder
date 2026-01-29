@@ -27,51 +27,98 @@ final class SampleHandler: RPBroadcastSampleHandler {
   }
 
   // MARK: - Extension Logging
-  
+
   /// Maximum number of log entries to keep (ring buffer)
   private static let maxLogEntries = 200
-  
+
   /// Logs a message to shared UserDefaults for debugging from the main app
   private func extensionLog(_ message: String, level: String = "INFO") {
     guard let groupID = hostAppGroupIdentifier,
-          let defaults = UserDefaults(suiteName: groupID)
+      let defaults = UserDefaults(suiteName: groupID)
     else {
       debugPrint("[ExtLog] \(message)")  // Fallback to debugPrint
       return
     }
-    
+
     let timestamp = Date().timeIntervalSince1970
     let dateFormatter = ISO8601DateFormatter()
     dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     let timeString = dateFormatter.string(from: Date())
-    
+
     let entry: [String: Any] = [
       "timestamp": timestamp,
       "time": timeString,
       "level": level,
-      "message": message
+      "message": message,
     ]
-    
+
     var logs = defaults.array(forKey: "ExtensionLogs") as? [[String: Any]] ?? []
     logs.append(entry)
-    
+
     // Keep only the last N entries (ring buffer)
     if logs.count > SampleHandler.maxLogEntries {
       logs = Array(logs.suffix(SampleHandler.maxLogEntries))
     }
-    
+
     defaults.set(logs, forKey: "ExtensionLogs")
     defaults.synchronize()
-    
+
     // Also print for Xcode console when debugging
     debugPrint("[\(level)] \(message)")
   }
-  
+
   /// Convenience methods for different log levels
   private func logInfo(_ message: String) { extensionLog(message, level: "INFO") }
   private func logWarning(_ message: String) { extensionLog(message, level: "WARN") }
   private func logError(_ message: String) { extensionLog(message, level: "ERROR") }
   private func logDebug(_ message: String) { extensionLog(message, level: "DEBUG") }
+
+  /// Logs audio metrics as a structured entry for Sentry integration
+  private func logAudioMetrics(_ metrics: [String: Any], context: String) {
+    guard let groupID = hostAppGroupIdentifier,
+      let defaults = UserDefaults(suiteName: groupID)
+    else {
+      return
+    }
+
+    let timestamp = Date().timeIntervalSince1970
+    let dateFormatter = ISO8601DateFormatter()
+    dateFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    let timeString = dateFormatter.string(from: Date())
+
+    var entry: [String: Any] = [
+      "timestamp": timestamp,
+      "time": timeString,
+      "context": context,
+      "type": "audioMetrics",
+    ]
+
+    // Merge metrics into entry
+    for (key, value) in metrics {
+      entry[key] = value
+    }
+
+    // Store in a separate key for easy retrieval
+    var metricsLog = defaults.array(forKey: "ExtensionAudioMetrics") as? [[String: Any]] ?? []
+    metricsLog.append(entry)
+
+    // Keep only last 50 metrics entries
+    if metricsLog.count > 50 {
+      metricsLog = Array(metricsLog.suffix(50))
+    }
+
+    defaults.set(metricsLog, forKey: "ExtensionAudioMetrics")
+    defaults.synchronize()
+
+    // Also log key metrics to main log
+    let summary =
+      "📊 AudioMetrics[\(context)]: " + "video=\(metrics["totalVideoFrames"] ?? 0) frames, "
+      + "mic=\(metrics["totalMicSamples"] ?? 0) samples, "
+      + "videoDur=\(String(format: "%.2f", (metrics["videoDuration"] as? Double) ?? 0))s, "
+      + "micDur=\(String(format: "%.2f", (metrics["micDuration"] as? Double) ?? 0))s, "
+      + "backpressureDrops=\(metrics["micBackpressureDrops"] ?? 0)mic/\(metrics["separateAudioBackpressureDrops"] ?? 0)sep"
+    logInfo(summary)
+  }
 
   // Store both the CFString and CFNotificationName versions for all notifications
   private static let stopNotificationString = "com.nitroscreenrecorder.stopBroadcast" as CFString
@@ -216,7 +263,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
       try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
       logInfo("broadcastStarted: Audio session configured with Bluetooth support")
     } catch {
-      logWarning("broadcastStarted: Failed to configure audio session: \(error.localizedDescription)")
+      logWarning(
+        "broadcastStarted: Failed to configure audio session: \(error.localizedDescription)")
     }
 
     guard let groupID = hostAppGroupIdentifier else {
@@ -317,22 +365,25 @@ final class SampleHandler: RPBroadcastSampleHandler {
         self.totalVideoFrames += 1
         self.videoFramesThisWriter += 1
         self.frameCount += 1
-        
+
         // Check for gap in frame delivery
         let now = Date()
         if let lastTime = self.lastVideoFrameTime {
           let gap = now.timeIntervalSince(lastTime)
           if gap > 0.5 {  // Log if gap > 500ms
-            self.logWarning("processSampleBuffer: VIDEO RESUMED after \(Int(gap * 1000))ms gap (total frames: \(self.totalVideoFrames))")
+            self.logWarning(
+              "processSampleBuffer: VIDEO RESUMED after \(Int(gap * 1000))ms gap (total frames: \(self.totalVideoFrames))"
+            )
           }
         }
         self.lastVideoFrameTime = now
-        
+
         // Log first frame for this writer
         if self.videoFramesThisWriter == 1 {
-          self.logInfo("processSampleBuffer: FIRST VIDEO FRAME for writer #\(self.totalVideoFrames) total")
+          self.logInfo(
+            "processSampleBuffer: FIRST VIDEO FRAME for writer #\(self.totalVideoFrames) total")
         }
-        
+
         if self.frameCount >= self.statusUpdateInterval {
           self.frameCount = 0
           self.updateExtensionStatus()
@@ -342,7 +393,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
       do {
         let success = try writer.processSampleBuffer(sampleBuffer, with: sampleBufferType)
         if sampleBufferType == .video && !success && self.videoFramesThisWriter <= 3 {
-          self.logWarning("processSampleBuffer: Video frame \(self.videoFramesThisWriter) NOT appended")
+          self.logWarning(
+            "processSampleBuffer: Video frame \(self.videoFramesThisWriter) NOT appended")
         }
       } catch {
         self.logError("processSampleBuffer: Error - \(error.localizedDescription)")
@@ -393,16 +445,20 @@ final class SampleHandler: RPBroadcastSampleHandler {
     // (notifications are sent twice 50ms apart for reliability, but we only want to process once)
     let arrivalTime = Date().timeIntervalSince1970
     let markStartTime = Date()
-    
+
     writerQueue.sync {
       // Debounce: ignore if this notification arrived within threshold of the last one
       if arrivalTime - self.lastMarkChunkArrivalTime < self.debounceThreshold {
-        self.logDebug("handleMarkChunk: Ignoring duplicate notification (debounce, delta=\(Int((arrivalTime - self.lastMarkChunkArrivalTime) * 1000))ms)")
+        self.logDebug(
+          "handleMarkChunk: Ignoring duplicate notification (debounce, delta=\(Int((arrivalTime - self.lastMarkChunkArrivalTime) * 1000))ms)"
+        )
         return
       }
       self.lastMarkChunkArrivalTime = arrivalTime
 
-      self.logInfo("handleMarkChunk: Discarding chunk (lock wait: \(Int(Date().timeIntervalSince(markStartTime) * 1000))ms, writerFrames: \(self.videoFramesThisWriter), totalFrames: \(self.totalVideoFrames))")
+      self.logInfo(
+        "handleMarkChunk: Discarding chunk (lock wait: \(Int(Date().timeIntervalSince(markStartTime) * 1000))ms, writerFrames: \(self.videoFramesThisWriter), totalFrames: \(self.totalVideoFrames))"
+      )
       self.isCapturing = true
       self.chunkStartedAt = Date().timeIntervalSince1970
 
@@ -420,7 +476,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
         } else {
           self.logDebug("handleMarkChunk: Discarding writer with frames")
         }
-        
+
         do {
           _ = try currentWriter.finishWithAudio()
           self.logInfo("handleMarkChunk: Previous writer finished (discarded)")
@@ -450,11 +506,13 @@ final class SampleHandler: RPBroadcastSampleHandler {
     // Capture arrival time BEFORE entering sync to properly debounce duplicate notifications
     let arrivalTime = Date().timeIntervalSince1970
     let finalizeStartTime = Date()
-    
+
     writerQueue.sync {
       // Debounce: ignore if this notification arrived within threshold of the last one
       if arrivalTime - self.lastFinalizeChunkArrivalTime < self.debounceThreshold {
-        self.logDebug("handleFinalizeChunk: Ignoring duplicate notification (debounce, delta=\(Int((arrivalTime - self.lastFinalizeChunkArrivalTime) * 1000))ms)")
+        self.logDebug(
+          "handleFinalizeChunk: Ignoring duplicate notification (debounce, delta=\(Int((arrivalTime - self.lastFinalizeChunkArrivalTime) * 1000))ms)"
+        )
         // Still send notification so main app doesn't hang on the duplicate call
         let notif = "com.nitroscreenrecorder.chunkSaved" as CFString
         CFNotificationCenterPostNotification(
@@ -468,7 +526,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
       }
       self.lastFinalizeChunkArrivalTime = arrivalTime
 
-      self.logInfo("handleFinalizeChunk: Saving current chunk, chunkId=\(self.pendingChunkId ?? "nil"), frames=\(self.videoFramesThisWriter)")
+      self.logInfo(
+        "handleFinalizeChunk: Saving current chunk, chunkId=\(self.pendingChunkId ?? "nil"), frames=\(self.videoFramesThisWriter)"
+      )
 
       // Mark capturing as done (will restart with next markChunkStart)
       self.isCapturing = false
@@ -500,7 +560,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
       // Check if writer has received any video frames
       if !currentWriter.hasReceivedVideoFrames {
-        self.logWarning("handleFinalizeChunk: NO VIDEO FRAMES received (count=\(self.videoFramesThisWriter)) - chunk is empty, skipping save")
+        self.logWarning(
+          "handleFinalizeChunk: NO VIDEO FRAMES received (count=\(self.videoFramesThisWriter)) - chunk is empty, skipping save"
+        )
         // Release the writer (it will be cancelled internally)
         do {
           _ = try currentWriter.finishWithAudio()
@@ -517,18 +579,22 @@ final class SampleHandler: RPBroadcastSampleHandler {
       let result: BroadcastWriter.FinishResult
       do {
         result = try currentWriter.finishWithAudio()
-        self.logInfo("handleFinalizeChunk: Writer finished successfully, video=\(result.videoURL.lastPathComponent)")
+        self.logInfo(
+          "handleFinalizeChunk: Writer finished successfully, video=\(result.videoURL.lastPathComponent)"
+        )
       } catch let writerError as NSError {
         // Log detailed error info
-        self.logError("handleFinalizeChunk: FAILED - domain=\(writerError.domain), code=\(writerError.code)")
+        self.logError(
+          "handleFinalizeChunk: FAILED - domain=\(writerError.domain), code=\(writerError.code)")
         self.logError("handleFinalizeChunk: FAILED - \(writerError.localizedDescription)")
         if let underlyingError = writerError.userInfo[NSUnderlyingErrorKey] as? NSError {
-          self.logError("handleFinalizeChunk: Underlying error - \(underlyingError.localizedDescription)")
+          self.logError(
+            "handleFinalizeChunk: Underlying error - \(underlyingError.localizedDescription)")
         }
         // Log writer state after failure
         let postDiagnostics = currentWriter.getDiagnostics()
         self.logError("handleFinalizeChunk: Writer state after failure: \(postDiagnostics)")
-        
+
         // Release the failed writer explicitly
         self.writer = nil
         // Still try to create a new writer so recording can continue
@@ -548,6 +614,20 @@ final class SampleHandler: RPBroadcastSampleHandler {
       // Release the finished writer before creating new one
       self.writer = nil
 
+      // Log audio metrics after finishing so they match the saved file
+      var audioMetrics = currentWriter.getAudioMetrics()
+      audioMetrics["outputVideoFile"] = result.videoURL.lastPathComponent
+      if let audioURL = result.audioURL {
+        audioMetrics["outputAudioFile"] = audioURL.lastPathComponent
+      }
+      if let appAudioURL = result.appAudioURL {
+        audioMetrics["outputAppAudioFile"] = appAudioURL.lastPathComponent
+      }
+      if let chunkId = self.pendingChunkId {
+        audioMetrics["chunkId"] = chunkId
+      }
+      self.logAudioMetrics(audioMetrics, context: "handleFinalizeChunk")
+
       // Save the chunk to shared container
       self.saveChunkToContainer(result: result)
 
@@ -565,39 +645,39 @@ final class SampleHandler: RPBroadcastSampleHandler {
   private func createNewWriter() {
     // Explicitly release old writer reference first
     writer = nil
-    
+
     let screen: UIScreen = .main
     var attempts = 0
     let maxAttempts = 3
-    
+
     // Reset per-writer frame counter
     videoFramesThisWriter = 0
     logDebug("createNewWriter: Starting, screen size=\(screen.bounds.size), scale=\(screen.scale)")
-    
+
     while attempts < maxAttempts {
       attempts += 1
-      
+
       // Generate fresh UUID for each attempt
       let uuid = UUID().uuidString
-      
+
       // Generate new file URLs
       nodeURL = fileManager.temporaryDirectory
         .appendingPathComponent(uuid)
         .appendingPathExtension(for: .mpeg4Movie)
-      
+
       audioNodeURL = fileManager.temporaryDirectory
         .appendingPathComponent("\(uuid)_mic_audio")
         .appendingPathExtension("m4a")
-      
+
       appAudioNodeURL = fileManager.temporaryDirectory
         .appendingPathComponent("\(uuid)_app_audio")
         .appendingPathExtension("m4a")
-      
+
       // Aggressively clean up any existing files at these paths
       fileManager.removeFileIfExists(url: nodeURL)
       fileManager.removeFileIfExists(url: audioNodeURL)
       fileManager.removeFileIfExists(url: appAudioNodeURL)
-      
+
       do {
         writer = try BroadcastWriter(
           outputURL: nodeURL,
@@ -608,19 +688,23 @@ final class SampleHandler: RPBroadcastSampleHandler {
           separateAudioFile: separateAudioFile
         )
         try writer?.start()
-        logInfo("createNewWriter: New writer created and started (attempt \(attempts)), output=\(nodeURL.lastPathComponent)")
+        logInfo(
+          "createNewWriter: New writer created and started (attempt \(attempts)), output=\(nodeURL.lastPathComponent)"
+        )
         return  // Success, exit
       } catch {
-        logError("createNewWriter: Attempt \(attempts)/\(maxAttempts) failed: \(error.localizedDescription)")
+        logError(
+          "createNewWriter: Attempt \(attempts)/\(maxAttempts) failed: \(error.localizedDescription)"
+        )
         writer = nil
-        
+
         if attempts < maxAttempts {
           // Brief delay before retry to let resources release
           Thread.sleep(forTimeInterval: 0.05)  // 50ms (reduced from 150ms)
         }
       }
     }
-    
+
     logError("createNewWriter: All \(maxAttempts) attempts failed - writer is nil")
   }
 
@@ -642,15 +726,17 @@ final class SampleHandler: RPBroadcastSampleHandler {
       )
       self.logInfo("saveChunkToContainer: Sent chunkSaved notification")
     }
-    
+
     // Log video file info
     let videoExists = fileManager.fileExists(atPath: result.videoURL.path)
     var videoSize: Int64 = 0
     if let attrs = try? fileManager.attributesOfItem(atPath: result.videoURL.path) {
       videoSize = (attrs[.size] as? Int64) ?? 0
     }
-    self.logInfo("saveChunkToContainer: Video file exists=\(videoExists), size=\(videoSize) bytes, path=\(result.videoURL.lastPathComponent)")
-    
+    self.logInfo(
+      "saveChunkToContainer: Video file exists=\(videoExists), size=\(videoSize) bytes, path=\(result.videoURL.lastPathComponent)"
+    )
+
     guard let groupID = hostAppGroupIdentifier,
       let defaults = UserDefaults(suiteName: groupID)
     else {
@@ -674,7 +760,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
     do {
       try fileManager.createDirectory(at: containerURL, withIntermediateDirectories: true)
     } catch {
-      self.logError("saveChunkToContainer: Could not create directory: \(error.localizedDescription)")
+      self.logError(
+        "saveChunkToContainer: Could not create directory: \(error.localizedDescription)")
       sendChunkNotification()
       return
     }
@@ -688,14 +775,16 @@ final class SampleHandler: RPBroadcastSampleHandler {
         try fileManager.removeItem(at: videoDestination)
       }
       try fileManager.moveItem(at: result.videoURL, to: videoDestination)
-      
+
       // Verify the move succeeded
       let destExists = fileManager.fileExists(atPath: videoDestination.path)
       var destSize: Int64 = 0
       if let attrs = try? fileManager.attributesOfItem(atPath: videoDestination.path) {
         destSize = (attrs[.size] as? Int64) ?? 0
       }
-      self.logInfo("saveChunkToContainer: Video moved to container, exists=\(destExists), size=\(destSize) bytes")
+      self.logInfo(
+        "saveChunkToContainer: Video moved to container, exists=\(destExists), size=\(destSize) bytes"
+      )
     } catch {
       self.logError("saveChunkToContainer: Failed to move video: \(error.localizedDescription)")
       sendChunkNotification()  // Notify even on failure
@@ -711,7 +800,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
         micAudioFileName = audioDestination.lastPathComponent
         self.logInfo("saveChunkToContainer: Mic audio saved: \(micAudioFileName!)")
       } catch {
-        self.logWarning("saveChunkToContainer: Failed to move mic audio: \(error.localizedDescription)")
+        self.logWarning(
+          "saveChunkToContainer: Failed to move mic audio: \(error.localizedDescription)")
       }
     }
 
@@ -724,7 +814,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
         appAudioFileName = appAudioDestination.lastPathComponent
         self.logInfo("saveChunkToContainer: App audio saved: \(appAudioFileName!)")
       } catch {
-        self.logWarning("saveChunkToContainer: Failed to move app audio: \(error.localizedDescription)")
+        self.logWarning(
+          "saveChunkToContainer: Failed to move app audio: \(error.localizedDescription)")
       }
     }
 
@@ -733,7 +824,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
       "video": videoDestination.lastPathComponent,
       "micEnabled": sawMicBuffers,
       "hadSeparateAudio": separateAudioFile,
-      "timestamp": Date().timeIntervalSince1970
+      "timestamp": Date().timeIntervalSince1970,
     ]
 
     if let id = pendingChunkId {
@@ -758,7 +849,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
     defaults.set(chunks, forKey: "PendingChunks")
     defaults.synchronize()
 
-    self.logInfo("saveChunkToContainer: Added to queue (total: \(chunks.count)), chunkId=\(pendingChunkId ?? "nil"), video=\(videoDestination.lastPathComponent)")
+    self.logInfo(
+      "saveChunkToContainer: Added to queue (total: \(chunks.count)), chunkId=\(pendingChunkId ?? "nil"), video=\(videoDestination.lastPathComponent)"
+    )
 
     // Clear pendingChunkId for next chunk
     pendingChunkId = nil
@@ -777,7 +870,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
   override func broadcastFinished() {
     logInfo("broadcastFinished: Broadcast ending...")
-    
+
     guard let writer else {
       logWarning("broadcastFinished: No writer present")
       clearExtensionStatus()
@@ -865,7 +958,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
       "video": videoDestination.lastPathComponent,
       "micEnabled": sawMicBuffers,
       "hadSeparateAudio": separateAudioFile,
-      "timestamp": Date().timeIntervalSince1970
+      "timestamp": Date().timeIntervalSince1970,
     ]
 
     if let id = pendingChunkId {

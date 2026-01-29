@@ -350,6 +350,43 @@ export declare function getExtensionLogs(): string[];
  */
 export declare function clearExtensionLogs(): void;
 /**
+ * Returns audio metrics from the broadcast extension as JSON for Sentry integration.
+ * Includes detailed metrics about audio capture: sample counts, durations,
+ * backpressure events, sync deltas, and drop counts by reason.
+ *
+ * Use this to attach to Sentry events when audio issues are detected.
+ *
+ * @platform iOS-only
+ * @returns JSON string containing audio metrics (parse with JSON.parse)
+ * @example
+ * ```typescript
+ * const metricsJson = getExtensionAudioMetrics();
+ * const metrics = JSON.parse(metricsJson);
+ * if (metrics.metrics?.length > 0) {
+ *   const lastMetrics = metrics.metrics[metrics.metrics.length - 1];
+ *   Sentry.addBreadcrumb({
+ *     category: 'audio',
+ *     data: lastMetrics,
+ *   });
+ * }
+ * ```
+ */
+export declare function getExtensionAudioMetrics(): string;
+/**
+ * Clears audio metrics from UserDefaults.
+ * Call this before starting a new recording session to get fresh metrics.
+ *
+ * @platform iOS-only
+ * @example
+ * ```typescript
+ * clearExtensionAudioMetrics();
+ * startGlobalRecording({ options: { enableMic: true } });
+ * // ... recording ...
+ * const metrics = getExtensionAudioMetrics(); // Fresh metrics from this session
+ * ```
+ */
+export declare function clearExtensionAudioMetrics(): void;
+/**
  * Clears all cached recording files to free up storage space.
  * This will delete temporary files but not files that have been explicitly saved.
  *

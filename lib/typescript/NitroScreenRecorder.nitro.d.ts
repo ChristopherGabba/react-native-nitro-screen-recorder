@@ -42,6 +42,17 @@ export interface NitroScreenRecorder extends HybridObject<{
      * @platform iOS-only
      */
     clearExtensionLogs(): void;
+    /**
+     * Returns audio metrics from the broadcast extension as JSON for Sentry.
+     * Includes sample counts, durations, backpressure stats, and sync deltas.
+     * @platform iOS-only
+     */
+    getExtensionAudioMetrics(): string;
+    /**
+     * Clears audio metrics from UserDefaults.
+     * @platform iOS-only
+     */
+    clearExtensionAudioMetrics(): void;
     clearRecordingCache(): void;
 }
 //# sourceMappingURL=NitroScreenRecorder.nitro.d.ts.map

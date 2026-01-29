@@ -258,6 +258,20 @@ namespace margelo::nitro::nitroscreenrecorder {
         std::rethrow_exception(__result.error());
       }
     }
+    inline std::string getExtensionAudioMetrics() override {
+      auto __result = _swiftPart.getExtensionAudioMetrics();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+      auto __value = std::move(__result.value());
+      return __value;
+    }
+    inline void clearExtensionAudioMetrics() override {
+      auto __result = _swiftPart.clearExtensionAudioMetrics();
+      if (__result.hasError()) [[unlikely]] {
+        std::rethrow_exception(__result.error());
+      }
+    }
     inline void clearRecordingCache() override {
       auto __result = _swiftPart.clearRecordingCache();
       if (__result.hasError()) [[unlikely]] {

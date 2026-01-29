@@ -36,6 +36,8 @@ public protocol HybridNitroScreenRecorderSpec_protocol: HybridObject {
   func isScreenBeingRecorded() throws -> Bool
   func getExtensionLogs() throws -> [String]
   func clearExtensionLogs() throws -> Void
+  func getExtensionAudioMetrics() throws -> String
+  func clearExtensionAudioMetrics() throws -> Void
   func clearRecordingCache() throws -> Void
 }
 

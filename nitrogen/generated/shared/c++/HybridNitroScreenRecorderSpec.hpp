@@ -99,6 +99,8 @@ namespace margelo::nitro::nitroscreenrecorder {
       virtual bool isScreenBeingRecorded() = 0;
       virtual std::vector<std::string> getExtensionLogs() = 0;
       virtual void clearExtensionLogs() = 0;
+      virtual std::string getExtensionAudioMetrics() = 0;
+      virtual void clearExtensionAudioMetrics() = 0;
       virtual void clearRecordingCache() = 0;
 
     protected:

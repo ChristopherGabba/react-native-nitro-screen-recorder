@@ -1280,6 +1280,45 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
   }
 
   /**
+   Returns audio metrics from the broadcast extension for debugging/Sentry.
+   Metrics include sample counts, durations, backpressure stats, and sync deltas.
+   Returns a JSON-encoded string that can be sent to Sentry or other logging services.
+   */
+  func getExtensionAudioMetrics() throws -> String {
+    guard let appGroupId = try? getAppGroupIdentifier(),
+          let defaults = UserDefaults(suiteName: appGroupId)
+    else {
+      return "{\"error\": \"Could not access app group\"}"
+    }
+    
+    guard let metrics = defaults.array(forKey: "ExtensionAudioMetrics") as? [[String: Any]] else {
+      return "{\"metrics\": []}"
+    }
+    
+    // Convert to JSON
+    do {
+      let jsonData = try JSONSerialization.data(withJSONObject: ["metrics": metrics], options: .prettyPrinted)
+      return String(data: jsonData, encoding: .utf8) ?? "{\"error\": \"JSON encoding failed\"}"
+    } catch {
+      return "{\"error\": \"JSON serialization failed: \(error.localizedDescription)\"}"
+    }
+  }
+
+  /**
+   Clears audio metrics from UserDefaults.
+   */
+  func clearExtensionAudioMetrics() throws {
+    guard let appGroupId = try? getAppGroupIdentifier(),
+          let defaults = UserDefaults(suiteName: appGroupId)
+    else {
+      return
+    }
+    
+    defaults.removeObject(forKey: "ExtensionAudioMetrics")
+    defaults.synchronize()
+  }
+
+  /**
    Returns the current status of the broadcast extension by reading from shared UserDefaults.
    Includes heartbeat, mic status, and chunk status.
    */

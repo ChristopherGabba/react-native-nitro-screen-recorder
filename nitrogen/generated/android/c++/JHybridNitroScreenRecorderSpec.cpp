@@ -276,6 +276,15 @@ namespace margelo::nitro::nitroscreenrecorder {
     static const auto method = javaClassStatic()->getMethod<void()>("clearExtensionLogs");
     method(_javaPart);
   }
+  std::string JHybridNitroScreenRecorderSpec::getExtensionAudioMetrics() {
+    static const auto method = javaClassStatic()->getMethod<jni::local_ref<jni::JString>()>("getExtensionAudioMetrics");
+    auto __result = method(_javaPart);
+    return __result->toStdString();
+  }
+  void JHybridNitroScreenRecorderSpec::clearExtensionAudioMetrics() {
+    static const auto method = javaClassStatic()->getMethod<void()>("clearExtensionAudioMetrics");
+    method(_javaPart);
+  }
   void JHybridNitroScreenRecorderSpec::clearRecordingCache() {
     static const auto method = javaClassStatic()->getMethod<void()>("clearRecordingCache");
     method(_javaPart);

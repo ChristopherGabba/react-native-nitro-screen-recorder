@@ -6,12 +6,31 @@ import {
   Platform,
   TouchableOpacity,
   Alert,
+  Animated,
+  Dimensions,
+  Easing,
 } from 'react-native';
 import * as ScreenRecorder from '../../';
 import { useVideoPlayer, VideoView } from 'expo-video';
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 
 const MIC_FAILURE_DELAY_MS = 1500; // Wait 1.5s before marking mic failure
+const THERMAL_STRESS_CHUNK_MS = 150;
+const THERMAL_STRESS_PAUSE_MS = 1;
+const GPU_LAYER_COUNT = 28;
+const GPU_LAYER_MIN_SIZE = 80;
+const GPU_LAYER_MAX_SIZE = 200;
+const GPU_LAYER_OPACITY_MIN = 0.08;
+const GPU_LAYER_OPACITY_MAX = 0.35;
+const GPU_OVERLAY_OPACITY = 0.35;
+const GPU_ANIMATION_DURATION_MS = 5000;
+const NETWORK_STRESS_URL = 'https://speed.cloudflare.com/__down?bytes=8000000';
+const NETWORK_STRESS_CONCURRENCY = 2;
+const NETWORK_STRESS_PAUSE_MS = 200;
+const MEMORY_STRESS_CHUNK_MB = 12;
+const MEMORY_STRESS_MAX_BUFFERS = 6;
+const MEMORY_STRESS_INTERVAL_MS = 500;
 
 /**
  * Dev-only hook to cleanup stale Android recording sessions after hot reload.
@@ -266,6 +285,42 @@ export default function App() {
     setIsChunkingActive(false);
   };
 
+  const formatAudioMetrics = useCallback((metricsJson: string) => {
+    try {
+      const parsed = JSON.parse(metricsJson);
+      return {
+        formatted: JSON.stringify(parsed, null, 2),
+        parsed,
+      };
+    } catch (error) {
+      console.warn('Failed to parse audio metrics JSON', error);
+      return {
+        formatted: metricsJson,
+        parsed: undefined,
+      };
+    }
+  }, []);
+
+  const logAudioMetricsToConsole = useCallback(
+    (context?: string) => {
+      if (Platform.OS !== 'ios') {
+        return;
+      }
+      const metricsJson = ScreenRecorder.getExtensionAudioMetrics();
+      const { parsed } = formatAudioMetrics(metricsJson);
+      const metricsArray = parsed?.metrics;
+      const latestMetrics =
+        Array.isArray(metricsArray) && metricsArray.length > 0
+          ? metricsArray[metricsArray.length - 1]
+          : (parsed ?? metricsJson);
+      const label = context
+        ? `📊 Extension audio metrics (${context})`
+        : '📊 Extension audio metrics';
+      console.log(label, latestMetrics);
+    },
+    [formatAudioMetrics]
+  );
+
   // Chunking Functions
   const handleMarkChunkStart = useCallback(() => {
     if (!isRecording) {
@@ -294,6 +349,7 @@ export default function App() {
     console.log(
       `📦 finalizeChunk took ${(performance.now() - t0).toFixed(0)}ms`
     );
+    logAudioMetricsToConsole('finalize chunk');
 
     if (file) {
       const newChunk: Chunk = {
@@ -341,7 +397,7 @@ export default function App() {
         'Failed to get chunk file. Check console for extension logs.'
       );
     }
-  }, [isRecording, isChunkingActive, chunkCounter]);
+  }, [isRecording, isChunkingActive, chunkCounter, logAudioMetricsToConsole]);
 
   const handleClearChunks = () => {
     setChunks([]);
@@ -360,12 +416,296 @@ export default function App() {
   // Extension logs state (iOS only)
   const [extensionLogs, setExtensionLogs] = useState<string[]>([]);
   const [showLogs, setShowLogs] = useState(false);
+  const [audioMetricsJson, setAudioMetricsJson] = useState('');
+  const [showAudioMetrics, setShowAudioMetrics] = useState(false);
+
+  // Camera overlay state for lipsync testing
+  const [showCameraOverlay, setShowCameraOverlay] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [isThermalStressActive, setIsThermalStressActive] = useState(false);
+  const [isGpuStressActive, setIsGpuStressActive] = useState(false);
+  const [isNetworkStressActive, setIsNetworkStressActive] = useState(false);
+  const [isMemoryStressActive, setIsMemoryStressActive] = useState(false);
+  const gpuAnimationValue = useRef(new Animated.Value(0)).current;
+  const gpuAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const thermalStressStateRef = useRef<{
+    active: boolean;
+    timer: ReturnType<typeof setTimeout> | null;
+    iteration: number;
+    lastValue: number;
+  }>({
+    active: false,
+    timer: null,
+    iteration: 0,
+    lastValue: 2,
+  });
+  const networkStressStateRef = useRef<{
+    active: boolean;
+    controllers: Set<AbortController>;
+    iteration: number;
+  }>({
+    active: false,
+    controllers: new Set<AbortController>(),
+    iteration: 0,
+  });
+  const memoryStressStateRef = useRef<{
+    active: boolean;
+    timer: ReturnType<typeof setInterval> | null;
+    buffers: Uint8Array[];
+  }>({
+    active: false,
+    timer: null,
+    buffers: [],
+  });
+
+  const gpuLayers = useMemo(() => {
+    const { width, height } = Dimensions.get('window');
+    return Array.from({ length: GPU_LAYER_COUNT }, (_, index) => {
+      const seed = index * 9973;
+      const rand = (offset: number) =>
+        Math.abs(Math.sin(seed + offset * 13.37)) % 1;
+      const size =
+        GPU_LAYER_MIN_SIZE +
+        rand(1) * (GPU_LAYER_MAX_SIZE - GPU_LAYER_MIN_SIZE);
+      const dx = (rand(2) - 0.5) * width * 1.2;
+      const dy = (rand(3) - 0.5) * height * 1.2;
+      const rotate = rand(4) * 360;
+      const scale = 0.6 + rand(5) * 1.4;
+      const opacity =
+        GPU_LAYER_OPACITY_MIN +
+        rand(6) * (GPU_LAYER_OPACITY_MAX - GPU_LAYER_OPACITY_MIN);
+      const color = `rgba(${Math.floor(rand(7) * 255)}, ${Math.floor(
+        rand(8) * 255
+      )}, ${Math.floor(rand(9) * 255)}, ${opacity.toFixed(2)})`;
+      const top = rand(10) * (height - size);
+      const left = rand(11) * (width - size);
+      return { size, dx, dy, rotate, scale, color, top, left };
+    });
+  }, []);
 
   const handleRefreshLogs = useCallback(() => {
     const logs = ScreenRecorder.getExtensionLogs();
     setExtensionLogs(logs);
     console.log(`📜 Loaded ${logs.length} extension logs`);
   }, []);
+
+  const handleDumpAudioMetrics = useCallback(() => {
+    const metricsJson = ScreenRecorder.getExtensionAudioMetrics();
+    const { parsed } = formatAudioMetrics(metricsJson);
+    const metricsArray = parsed?.metrics;
+    const latestMetrics =
+      Array.isArray(metricsArray) && metricsArray.length > 0
+        ? metricsArray[metricsArray.length - 1]
+        : (parsed ?? metricsJson);
+    setAudioMetricsJson(JSON.stringify(latestMetrics, null, 2));
+    setShowAudioMetrics(true);
+    console.log('📊 Extension audio metrics (latest):', latestMetrics);
+  }, [formatAudioMetrics]);
+
+  const runThermalStress = useCallback(() => {
+    if (!thermalStressStateRef.current.active) {
+      return;
+    }
+
+    const start = performance.now();
+    let n = thermalStressStateRef.current.lastValue;
+    let accumulator = 0;
+
+    while (performance.now() - start < THERMAL_STRESS_CHUNK_MS) {
+      let isPrime = true;
+      for (let i = 2; i * i <= n; i++) {
+        if (n % i === 0) {
+          isPrime = false;
+          break;
+        }
+      }
+      if (isPrime) {
+        accumulator += n;
+      }
+      n += 1;
+    }
+
+    thermalStressStateRef.current.lastValue = n + (accumulator % 2);
+    thermalStressStateRef.current.iteration += 1;
+
+    if (thermalStressStateRef.current.iteration % 30 === 0) {
+      console.log(
+        `🔥 Thermal stress tick (${thermalStressStateRef.current.iteration})`
+      );
+    }
+
+    thermalStressStateRef.current.timer = setTimeout(
+      runThermalStress,
+      THERMAL_STRESS_PAUSE_MS
+    );
+  }, []);
+
+  const startGpuStress = useCallback(() => {
+    if (gpuAnimationRef.current) {
+      return;
+    }
+    setIsGpuStressActive(true);
+    gpuAnimationValue.setValue(0);
+    gpuAnimationRef.current = Animated.loop(
+      Animated.sequence([
+        Animated.timing(gpuAnimationValue, {
+          toValue: 1,
+          duration: GPU_ANIMATION_DURATION_MS,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+        Animated.timing(gpuAnimationValue, {
+          toValue: 0,
+          duration: GPU_ANIMATION_DURATION_MS,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    gpuAnimationRef.current.start();
+  }, [gpuAnimationValue]);
+
+  const stopGpuStress = useCallback(() => {
+    gpuAnimationRef.current?.stop();
+    gpuAnimationRef.current = null;
+    setIsGpuStressActive(false);
+  }, []);
+
+  const runNetworkStressLoop = useCallback(async () => {
+    const state = networkStressStateRef.current;
+    while (state.active) {
+      const controller = new AbortController();
+      state.controllers.add(controller);
+      try {
+        const response = await fetch(NETWORK_STRESS_URL, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        await response.arrayBuffer();
+        state.iteration += 1;
+        if (state.iteration % 5 === 0) {
+          console.log(`🌐 Network stress tick (${state.iteration})`);
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.warn('🌐 Network stress error', error);
+        }
+      } finally {
+        state.controllers.delete(controller);
+      }
+      if (NETWORK_STRESS_PAUSE_MS > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, NETWORK_STRESS_PAUSE_MS)
+        );
+      }
+    }
+  }, []);
+
+  const startNetworkStress = useCallback(() => {
+    const state = networkStressStateRef.current;
+    if (state.active) {
+      return;
+    }
+    state.active = true;
+    state.iteration = 0;
+    setIsNetworkStressActive(true);
+    for (let i = 0; i < NETWORK_STRESS_CONCURRENCY; i += 1) {
+      runNetworkStressLoop().catch((error) => {
+        console.warn('🌐 Network stress loop error', error);
+      });
+    }
+  }, [runNetworkStressLoop]);
+
+  const stopNetworkStress = useCallback(() => {
+    const state = networkStressStateRef.current;
+    state.active = false;
+    state.controllers.forEach((controller) => controller.abort());
+    state.controllers.clear();
+    setIsNetworkStressActive(false);
+  }, []);
+
+  const startMemoryStress = useCallback(() => {
+    const state = memoryStressStateRef.current;
+    if (state.active) {
+      return;
+    }
+    state.active = true;
+    setIsMemoryStressActive(true);
+    state.timer = setInterval(() => {
+      if (!state.active) {
+        return;
+      }
+      try {
+        const chunkSizeBytes = MEMORY_STRESS_CHUNK_MB * 1024 * 1024;
+        const buffer = new Uint8Array(chunkSizeBytes);
+        buffer[0] = state.buffers.length % 255;
+        state.buffers.push(buffer);
+        if (state.buffers.length > MEMORY_STRESS_MAX_BUFFERS) {
+          state.buffers.shift();
+        }
+      } catch (error) {
+        console.warn('🧠 Memory stress error', error);
+      }
+    }, MEMORY_STRESS_INTERVAL_MS);
+  }, []);
+
+  const stopMemoryStress = useCallback(() => {
+    const state = memoryStressStateRef.current;
+    state.active = false;
+    if (state.timer) {
+      clearInterval(state.timer);
+      state.timer = null;
+    }
+    state.buffers = [];
+    setIsMemoryStressActive(false);
+  }, []);
+
+  const startThermalStress = useCallback(() => {
+    if (thermalStressStateRef.current.active) {
+      return;
+    }
+    thermalStressStateRef.current.active = true;
+    thermalStressStateRef.current.iteration = 0;
+    setIsThermalStressActive(true);
+    runThermalStress();
+  }, [runThermalStress]);
+
+  const stopThermalStress = useCallback(() => {
+    thermalStressStateRef.current.active = false;
+    if (thermalStressStateRef.current.timer) {
+      clearTimeout(thermalStressStateRef.current.timer);
+      thermalStressStateRef.current.timer = null;
+    }
+    setIsThermalStressActive(false);
+  }, []);
+
+  const startKitchenSinkStress = useCallback(() => {
+    startThermalStress();
+    startGpuStress();
+    startNetworkStress();
+    startMemoryStress();
+  }, [
+    startGpuStress,
+    startMemoryStress,
+    startNetworkStress,
+    startThermalStress,
+  ]);
+
+  const stopKitchenSinkStress = useCallback(() => {
+    stopThermalStress();
+    stopGpuStress();
+    stopNetworkStress();
+    stopMemoryStress();
+  }, [stopGpuStress, stopMemoryStress, stopNetworkStress, stopThermalStress]);
+
+  useEffect(() => {
+    return () => {
+      stopThermalStress();
+      stopGpuStress();
+      stopNetworkStress();
+      stopMemoryStress();
+    };
+  }, [stopGpuStress, stopMemoryStress, stopNetworkStress, stopThermalStress]);
 
   const stressTestRapidChunks = useCallback(async () => {
     if (!isRecording) {
@@ -1194,499 +1534,743 @@ export default function App() {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
+  // Camera overlay toggle handler
+  const handleToggleCameraOverlay = async () => {
+    if (!showCameraOverlay) {
+      // Request permission if not granted
+      if (!cameraPermission?.granted) {
+        const result = await requestCameraPermission();
+        if (!result.granted) {
+          Alert.alert(
+            'Camera Permission',
+            'Camera permission is required for the overlay'
+          );
+          return;
+        }
+      }
+    }
+    setShowCameraOverlay(!showCameraOverlay);
+  };
+
+  const isKitchenSinkActive =
+    isThermalStressActive &&
+    isGpuStressActive &&
+    isNetworkStressActive &&
+    isMemoryStressActive;
+
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Screen Recorder Demo</Text>
-        <Text style={styles.headerSubtitle}>
-          {isRecording ? '🔴 Recording Active' : '⚪ Not Recording'}
-        </Text>
-      </View>
-
-      {/* Permissions Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Setup</Text>
-        <TouchableOpacity style={styles.button} onPress={requestPermissions}>
-          <Text style={styles.buttonText}>Request Permissions</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Chunking Section - Main Feature */}
-      <View style={[styles.section, styles.chunkingSection]}>
-        <Text style={styles.sectionTitle}>🎯 Chunk Recording (New!)</Text>
-        <Text style={styles.description}>
-          Start a global recording, then mark chunk boundaries to capture
-          segments for progressive upload.
-        </Text>
-
-        {/* Recording Controls */}
-        <View style={styles.buttonRow}>
-          {!isRecording ? (
-            <TouchableOpacity
-              style={[styles.button, styles.startButton]}
-              onPress={handleStartGlobalRecording}
-            >
-              <Text style={styles.buttonText}>▶ Start Recording</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.button, styles.stopButton]}
-              onPress={handleStopGlobalRecording}
-            >
-              <Text style={styles.buttonText}>⏹ Stop Recording</Text>
-            </TouchableOpacity>
-          )}
+    <View style={styles.root}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.contentContainer}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Screen Recorder Demo</Text>
+          <Text style={styles.headerSubtitle}>
+            {isRecording ? '🔴 Recording Active' : '⚪ Not Recording'}
+          </Text>
         </View>
 
-        {/* Chunk Controls */}
-        <View style={styles.chunkControls}>
-          <TouchableOpacity
-            style={[
-              styles.chunkButton,
-              styles.markButton,
-              !isRecording && styles.disabledButton,
-            ]}
-            onPress={handleMarkChunkStart}
-            disabled={!isRecording}
-          >
-            <Text style={styles.chunkButtonText}>📍 Mark Start</Text>
-            <Text style={styles.chunkButtonSubtext}>Begin new chunk</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.chunkButton,
-              styles.finalizeButton,
-              (!isRecording || !isChunkingActive) && styles.disabledButton,
-            ]}
-            onPress={handleFinalizeChunk}
-            disabled={!isRecording || !isChunkingActive}
-          >
-            <Text style={styles.chunkButtonText}>📦 Finalize</Text>
-            <Text style={styles.chunkButtonSubtext}>Save & get file</Text>
+        {/* Permissions Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Setup</Text>
+          <TouchableOpacity style={styles.button} onPress={requestPermissions}>
+            <Text style={styles.buttonText}>Request Permissions</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Mic Gating Status Banner */}
-        {isRecording && (
-          <View
+        {/* Camera Overlay Section for Lipsync Testing */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>
+            📹 Camera Overlay (Lipsync Test)
+          </Text>
+          <Text style={styles.description}>
+            Toggle camera overlay to see yourself while recording for lipsync
+            testing.
+          </Text>
+          <TouchableOpacity
             style={[
-              styles.micStatusBanner,
-              isReady && styles.micStatusReady,
-              hadMicFailure && styles.micStatusFailure,
-              isStopping && styles.micStatusStopping,
-              !isReady &&
-                !hadMicFailure &&
-                !isStopping &&
-                styles.micStatusAwaiting,
+              styles.button,
+              showCameraOverlay ? styles.stopButton : styles.startButton,
             ]}
+            onPress={handleToggleCameraOverlay}
           >
-            <Text style={styles.micStatusText}>
-              {isStopping
-                ? '🛑 Stopping (mic not enabled)...'
-                : hadMicFailure
-                  ? '❌ MIC FAILURE - Auto-stopping recording'
-                  : isReady
-                    ? '✅ Recording with Mic Enabled'
-                    : '⏳ Awaiting mic activation...'}
+            <Text style={styles.buttonText}>
+              {showCameraOverlay
+                ? '📷 Hide Camera Overlay'
+                : '📷 Show Camera Overlay'}
             </Text>
-          </View>
-        )}
+          </TouchableOpacity>
+        </View>
 
-        {/* Status */}
-        <View style={styles.statusBar}>
-          <View style={styles.statusRow}>
-            <Text style={styles.statusText}>
-              Extension:{' '}
-              {extensionStatus.state === 'running' ||
-              extensionStatus.state === 'capturingChunk'
-                ? '🟢 Recording'
-                : '⚪ Idle'}
-            </Text>
-            <Text style={styles.statusText}>
-              Mic: {isMicEnabled ? '🎤 Enabled' : '🔇 Disabled'}
-            </Text>
+        {/* Chunking Section - Main Feature */}
+        <View style={[styles.section, styles.chunkingSection]}>
+          <Text style={styles.sectionTitle}>🎯 Chunk Recording (New!)</Text>
+          <Text style={styles.description}>
+            Start a global recording, then mark chunk boundaries to capture
+            segments for progressive upload.
+          </Text>
+
+          {/* Recording Controls */}
+          <View style={styles.buttonRow}>
+            {!isRecording ? (
+              <TouchableOpacity
+                style={[styles.button, styles.startButton]}
+                onPress={handleStartGlobalRecording}
+              >
+                <Text style={styles.buttonText}>▶ Start Recording</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.button, styles.stopButton]}
+                onPress={handleStopGlobalRecording}
+              >
+                <Text style={styles.buttonText}>⏹ Stop Recording</Text>
+              </TouchableOpacity>
+            )}
           </View>
-          <View style={styles.statusRow}>
-            <Text style={styles.statusText}>
-              Chunk:{' '}
-              {extensionStatus.isCapturingChunk
-                ? `🔴 ${Math.floor(Date.now() / 1000 - extensionStatus.chunkStartedAt)}s`
-                : '⚪ None'}
-            </Text>
-            <Text style={styles.statusText}>Total: {chunks.length}</Text>
+
+          {/* Chunk Controls */}
+          <View style={styles.chunkControls}>
+            <TouchableOpacity
+              style={[
+                styles.chunkButton,
+                styles.markButton,
+                !isRecording && styles.disabledButton,
+              ]}
+              onPress={handleMarkChunkStart}
+              disabled={!isRecording}
+            >
+              <Text style={styles.chunkButtonText}>📍 Mark Start</Text>
+              <Text style={styles.chunkButtonSubtext}>Begin new chunk</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.chunkButton,
+                styles.finalizeButton,
+                (!isRecording || !isChunkingActive) && styles.disabledButton,
+              ]}
+              onPress={handleFinalizeChunk}
+              disabled={!isRecording || !isChunkingActive}
+            >
+              <Text style={styles.chunkButtonText}>📦 Finalize</Text>
+              <Text style={styles.chunkButtonSubtext}>Save & get file</Text>
+            </TouchableOpacity>
           </View>
-          <View style={styles.statusRow}>
-            <Text style={styles.statusText}>
-              Gating:{' '}
-              {hadMicFailure
-                ? '❌ Failed'
-                : isReady
-                  ? '✅ Ready'
-                  : isRecording
-                    ? '⏳ Checking...'
-                    : '⚪ Idle'}
-            </Text>
-            <Text style={styles.statusText}>
-              isReady: {isReady ? 'true' : 'false'}
-            </Text>
-          </View>
-          {/* Capture Mode - Android 14+ only */}
-          {Platform.OS === 'android' && isRecording && (
-            <View style={styles.statusRow}>
-              <Text style={styles.statusText}>
-                Capture Mode:{' '}
-                {extensionStatus.captureMode === 'entireScreen'
-                  ? '📺 Entire Screen'
-                  : extensionStatus.captureMode === 'singleApp'
-                    ? '📱 Single App'
-                    : '❓ Unknown'}
+
+          {/* Mic Gating Status Banner */}
+          {isRecording && (
+            <View
+              style={[
+                styles.micStatusBanner,
+                isReady && styles.micStatusReady,
+                hadMicFailure && styles.micStatusFailure,
+                isStopping && styles.micStatusStopping,
+                !isReady &&
+                  !hadMicFailure &&
+                  !isStopping &&
+                  styles.micStatusAwaiting,
+              ]}
+            >
+              <Text style={styles.micStatusText}>
+                {isStopping
+                  ? '🛑 Stopping (mic not enabled)...'
+                  : hadMicFailure
+                    ? '❌ MIC FAILURE - Auto-stopping recording'
+                    : isReady
+                      ? '✅ Recording with Mic Enabled'
+                      : '⏳ Awaiting mic activation...'}
               </Text>
             </View>
           )}
+
+          {/* Status */}
+          <View style={styles.statusBar}>
+            <View style={styles.statusRow}>
+              <Text style={styles.statusText}>
+                Extension:{' '}
+                {extensionStatus.state === 'running' ||
+                extensionStatus.state === 'capturingChunk'
+                  ? '🟢 Recording'
+                  : '⚪ Idle'}
+              </Text>
+              <Text style={styles.statusText}>
+                Mic: {isMicEnabled ? '🎤 Enabled' : '🔇 Disabled'}
+              </Text>
+            </View>
+            <View style={styles.statusRow}>
+              <Text style={styles.statusText}>
+                Chunk:{' '}
+                {extensionStatus.isCapturingChunk
+                  ? `🔴 ${Math.floor(Date.now() / 1000 - extensionStatus.chunkStartedAt)}s`
+                  : '⚪ None'}
+              </Text>
+              <Text style={styles.statusText}>Total: {chunks.length}</Text>
+            </View>
+            <View style={styles.statusRow}>
+              <Text style={styles.statusText}>
+                Gating:{' '}
+                {hadMicFailure
+                  ? '❌ Failed'
+                  : isReady
+                    ? '✅ Ready'
+                    : isRecording
+                      ? '⏳ Checking...'
+                      : '⚪ Idle'}
+              </Text>
+              <Text style={styles.statusText}>
+                isReady: {isReady ? 'true' : 'false'}
+              </Text>
+            </View>
+            {/* Capture Mode - Android 14+ only */}
+            {Platform.OS === 'android' && isRecording && (
+              <View style={styles.statusRow}>
+                <Text style={styles.statusText}>
+                  Capture Mode:{' '}
+                  {extensionStatus.captureMode === 'entireScreen'
+                    ? '📺 Entire Screen'
+                    : extensionStatus.captureMode === 'singleApp'
+                      ? '📱 Single App'
+                      : '❓ Unknown'}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Chunks List */}
+          {chunks.length > 0 && (
+            <View style={styles.chunksList}>
+              <Text style={styles.chunksTitle}>Captured Chunks:</Text>
+              {chunks.map((chunk) => (
+                <TouchableOpacity
+                  key={chunk.id}
+                  style={[
+                    styles.chunkItem,
+                    selectedChunk?.id === chunk.id && styles.selectedChunkItem,
+                  ]}
+                  onPress={() => setSelectedChunk(chunk)}
+                >
+                  <View style={styles.chunkInfo}>
+                    <Text style={styles.chunkName}>Chunk {chunk.id}</Text>
+                    <Text style={styles.chunkMeta}>
+                      {formatDuration(chunk.file.duration)} •{' '}
+                      {formatSize(chunk.file.size)}
+                    </Text>
+                  </View>
+                  <Text style={styles.chunkTime}>
+                    {chunk.timestamp.toLocaleTimeString()}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Chunk Player */}
+          {selectedChunk && (
+            <View style={styles.playerContainer}>
+              <Text style={styles.playerLabel}>
+                Playing: Chunk {selectedChunk.id}
+              </Text>
+              <VideoView
+                player={chunkPlayer}
+                style={styles.player}
+                contentFit="contain"
+              />
+            </View>
+          )}
+
+          {/* Clear Chunks */}
+          {chunks.length > 0 && (
+            <TouchableOpacity
+              style={[styles.button, styles.clearButton]}
+              onPress={handleClearChunks}
+            >
+              <Text style={styles.buttonText}>🗑 Clear All Chunks</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
-        {/* Chunks List */}
-        {chunks.length > 0 && (
-          <View style={styles.chunksList}>
-            <Text style={styles.chunksTitle}>Captured Chunks:</Text>
-            {chunks.map((chunk) => (
-              <TouchableOpacity
-                key={chunk.id}
-                style={[
-                  styles.chunkItem,
-                  selectedChunk?.id === chunk.id && styles.selectedChunkItem,
-                ]}
-                onPress={() => setSelectedChunk(chunk)}
-              >
-                <View style={styles.chunkInfo}>
-                  <Text style={styles.chunkName}>Chunk {chunk.id}</Text>
-                  <Text style={styles.chunkMeta}>
-                    {formatDuration(chunk.file.duration)} •{' '}
-                    {formatSize(chunk.file.size)}
+        {/* Stress Tests Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🧪 Stress Tests</Text>
+          <Text style={styles.description}>
+            Run these while global recording is active to test chunk ID
+            matching.
+          </Text>
+
+          <View style={styles.stressTestGrid}>
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestRapidChunks}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '⚡'} Rapid Chunks
+              </Text>
+              <Text style={styles.stressTestSubtext}>5 quick cycles</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestDuplicateId}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>🔄 Duplicate ID</Text>
+              <Text style={styles.stressTestSubtext}>Same ID twice</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                isStressTesting && styles.disabledButton,
+              ]}
+              onPress={stressTestMissingId}
+              disabled={isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>❓ Missing ID</Text>
+              <Text style={styles.stressTestSubtext}>Non-existent chunk</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestAudioPairing}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>🎵 Audio Pairing</Text>
+              <Text style={styles.stressTestSubtext}>3 chunks with audio</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestLongRecording}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '🎬'} Long Recording
+              </Text>
+              <Text style={styles.stressTestSubtext}>10 second chunk</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestRaceCondition}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '🏁'} Race Conditions
+              </Text>
+              <Text style={styles.stressTestSubtext}>Overlap + concurrent</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestAudioMismatch}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '🔊'} Audio Mismatch
+              </Text>
+              <Text style={styles.stressTestSubtext}>
+                5 chunks, distinct durations
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestRealisticInterview}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '🎤'} Interview Sim
+              </Text>
+              <Text style={styles.stressTestSubtext}>
+                5 questions, 3-6s each
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestHardMode}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '🔥'} Hard Mode
+              </Text>
+              <Text style={styles.stressTestSubtext}>40 Q, 0.5s-15s each</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestFasterChunks}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '🚀'} Faster Chunks
+              </Text>
+              <Text style={styles.stressTestSubtext}>20x 500ms chunks</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestMarkSpam}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '📨'} Mark Spam
+              </Text>
+              <Text style={styles.stressTestSubtext}>
+                5 marks before finalize
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestNoGapBurst}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '💥'} No-Gap Burst
+              </Text>
+              <Text style={styles.stressTestSubtext}>15x back-to-back</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Device Heat Test */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🔥 Device Heat Test</Text>
+          <Text style={styles.description}>
+            Extreme CPU load to warm the device. Expect heavy battery drain and
+            UI jank.
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              isThermalStressActive ? styles.stopButton : styles.startButton,
+            ]}
+            onPress={
+              isThermalStressActive ? stopThermalStress : startThermalStress
+            }
+          >
+            <Text style={styles.buttonText}>
+              {isThermalStressActive ? 'Stop Heat Test' : 'Start Heat Test'}
+            </Text>
+          </TouchableOpacity>
+          {isThermalStressActive && (
+            <Text style={styles.thermalStatus}>Running heavy CPU load…</Text>
+          )}
+        </View>
+
+        {/* Kitchen Sink Stress */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>🧨 Kitchen Sink Stress</Text>
+          <Text style={styles.description}>
+            CPU + GPU + network + memory pressure all at once.
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.button,
+              isKitchenSinkActive ? styles.stopButton : styles.startButton,
+            ]}
+            onPress={
+              isKitchenSinkActive
+                ? stopKitchenSinkStress
+                : startKitchenSinkStress
+            }
+          >
+            <Text style={styles.buttonText}>
+              {isKitchenSinkActive
+                ? 'Stop All Stressors'
+                : 'Start All Stressors'}
+            </Text>
+          </TouchableOpacity>
+          <View style={styles.stressToggleRow}>
+            <TouchableOpacity
+              style={[
+                styles.stressToggle,
+                isThermalStressActive && styles.stressToggleActive,
+              ]}
+              onPress={
+                isThermalStressActive ? stopThermalStress : startThermalStress
+              }
+            >
+              <Text style={styles.stressToggleText}>CPU</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.stressToggle,
+                isGpuStressActive && styles.stressToggleActive,
+              ]}
+              onPress={isGpuStressActive ? stopGpuStress : startGpuStress}
+            >
+              <Text style={styles.stressToggleText}>GPU</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.stressToggle,
+                isNetworkStressActive && styles.stressToggleActive,
+              ]}
+              onPress={
+                isNetworkStressActive ? stopNetworkStress : startNetworkStress
+              }
+            >
+              <Text style={styles.stressToggleText}>Network</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.stressToggle,
+                isMemoryStressActive && styles.stressToggleActive,
+              ]}
+              onPress={
+                isMemoryStressActive ? stopMemoryStress : startMemoryStress
+              }
+            >
+              <Text style={styles.stressToggleText}>Memory</Text>
+            </TouchableOpacity>
+          </View>
+          {(isGpuStressActive ||
+            isNetworkStressActive ||
+            isMemoryStressActive) && (
+            <Text style={styles.thermalStatus}>Multiple stressors active…</Text>
+          )}
+        </View>
+
+        {/* Extension Logs Section (iOS only) */}
+        {Platform.OS === 'ios' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>📜 Extension Logs</Text>
+            <Text style={styles.description}>
+              Debug logs from the broadcast extension. Use these to diagnose
+              chunk/export issues.
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.button, styles.logsButton]}
+              onPress={() => {
+                handleRefreshLogs();
+                setShowLogs(true);
+              }}
+            >
+              <Text style={styles.buttonText}>📥 Load Logs</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.button, styles.metricsButton]}
+              onPress={handleDumpAudioMetrics}
+            >
+              <Text style={styles.buttonText}>📊 Dump Audio Metrics</Text>
+            </TouchableOpacity>
+
+            {showLogs && (
+              <View style={styles.logsContainer}>
+                <View style={styles.logsHeader}>
+                  <Text style={styles.logsCount}>
+                    {extensionLogs.length} log entries
                   </Text>
+                  <TouchableOpacity onPress={handleRefreshLogs}>
+                    <Text style={styles.refreshButton}>🔄 Refresh</Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.chunkTime}>
-                  {chunk.timestamp.toLocaleTimeString()}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                <ScrollView
+                  style={styles.logsScroll}
+                  nestedScrollEnabled={true}
+                >
+                  {extensionLogs.length === 0 ? (
+                    <Text style={styles.logEntry}>
+                      No logs available. Start a recording to generate logs.
+                    </Text>
+                  ) : (
+                    extensionLogs.map((log, index) => (
+                      <Text
+                        key={index}
+                        style={[
+                          styles.logEntry,
+                          log.includes('[ERROR]') && styles.logError,
+                          log.includes('[WARN]') && styles.logWarning,
+                        ]}
+                      >
+                        {log}
+                      </Text>
+                    ))
+                  )}
+                </ScrollView>
+              </View>
+            )}
+
+            {showAudioMetrics && (
+              <View style={styles.logsContainer}>
+                <View style={styles.logsHeader}>
+                  <Text style={styles.logsCount}>Audio metrics</Text>
+                  <TouchableOpacity onPress={() => setShowAudioMetrics(false)}>
+                    <Text style={styles.refreshButton}>✕ Close</Text>
+                  </TouchableOpacity>
+                </View>
+                <ScrollView
+                  style={styles.logsScroll}
+                  nestedScrollEnabled={true}
+                >
+                  <Text style={styles.logEntry}>
+                    {audioMetricsJson.length > 0
+                      ? audioMetricsJson
+                      : 'No metrics available. Start a recording to generate metrics.'}
+                  </Text>
+                </ScrollView>
+              </View>
+            )}
           </View>
         )}
 
-        {/* Chunk Player */}
-        {selectedChunk && (
-          <View style={styles.playerContainer}>
+        {/* In-App Recording Section */}
+        {Platform.OS === 'ios' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>In-App Recording</Text>
+            <View style={styles.buttonRow}>
+              <TouchableOpacity
+                style={[styles.button, styles.startButton, styles.flexButton]}
+                onPress={handleStartInAppRecording}
+              >
+                <Text style={styles.buttonText}>Start</Text>
+              </TouchableOpacity>
+              <View style={styles.buttonSpacer} />
+              <TouchableOpacity
+                style={[styles.button, styles.stopButton, styles.flexButton]}
+                onPress={handleStopInAppRecording}
+              >
+                <Text style={styles.buttonText}>Stop</Text>
+              </TouchableOpacity>
+            </View>
+            {inAppRecording && (
+              <View style={styles.playerContainer}>
+                <Text style={styles.playerLabel}>
+                  {inAppRecording.name} ({formatSize(inAppRecording.size)})
+                </Text>
+                <VideoView
+                  player={inAppPlayer}
+                  style={styles.player}
+                  contentFit="contain"
+                />
+              </View>
+            )}
+          </View>
+        )}
+
+        {/* Global Recording Player */}
+        {globalRecording && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Last Global Recording</Text>
             <Text style={styles.playerLabel}>
-              Playing: Chunk {selectedChunk.id}
+              {globalRecording.name} •{' '}
+              {formatDuration(globalRecording.duration)} •{' '}
+              {formatSize(globalRecording.size)}
             </Text>
             <VideoView
-              player={chunkPlayer}
+              player={globalPlayer}
               style={styles.player}
               contentFit="contain"
             />
           </View>
         )}
 
-        {/* Clear Chunks */}
-        {chunks.length > 0 && (
-          <TouchableOpacity
-            style={[styles.button, styles.clearButton]}
-            onPress={handleClearChunks}
-          >
-            <Text style={styles.buttonText}>🗑 Clear All Chunks</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Stress Tests Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>🧪 Stress Tests</Text>
-        <Text style={styles.description}>
-          Run these while global recording is active to test chunk ID matching.
-        </Text>
-
-        <View style={styles.stressTestGrid}>
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestRapidChunks}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>
-              {isStressTesting ? '⏳' : '⚡'} Rapid Chunks
-            </Text>
-            <Text style={styles.stressTestSubtext}>5 quick cycles</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestDuplicateId}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>🔄 Duplicate ID</Text>
-            <Text style={styles.stressTestSubtext}>Same ID twice</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              isStressTesting && styles.disabledButton,
-            ]}
-            onPress={stressTestMissingId}
-            disabled={isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>❓ Missing ID</Text>
-            <Text style={styles.stressTestSubtext}>Non-existent chunk</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestAudioPairing}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>🎵 Audio Pairing</Text>
-            <Text style={styles.stressTestSubtext}>3 chunks with audio</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestLongRecording}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>
-              {isStressTesting ? '⏳' : '🎬'} Long Recording
-            </Text>
-            <Text style={styles.stressTestSubtext}>10 second chunk</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestRaceCondition}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>
-              {isStressTesting ? '⏳' : '🏁'} Race Conditions
-            </Text>
-            <Text style={styles.stressTestSubtext}>Overlap + concurrent</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestAudioMismatch}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>
-              {isStressTesting ? '⏳' : '🔊'} Audio Mismatch
-            </Text>
-            <Text style={styles.stressTestSubtext}>
-              5 chunks, distinct durations
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestRealisticInterview}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>
-              {isStressTesting ? '⏳' : '🎤'} Interview Sim
-            </Text>
-            <Text style={styles.stressTestSubtext}>5 questions, 3-6s each</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestHardMode}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>
-              {isStressTesting ? '⏳' : '🔥'} Hard Mode
-            </Text>
-            <Text style={styles.stressTestSubtext}>40 Q, 0.5s-15s each</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestFasterChunks}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>
-              {isStressTesting ? '⏳' : '🚀'} Faster Chunks
-            </Text>
-            <Text style={styles.stressTestSubtext}>20x 500ms chunks</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestMarkSpam}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>
-              {isStressTesting ? '⏳' : '📨'} Mark Spam
-            </Text>
-            <Text style={styles.stressTestSubtext}>
-              5 marks before finalize
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.stressTestButton,
-              (!isRecording || isStressTesting) && styles.disabledButton,
-            ]}
-            onPress={stressTestNoGapBurst}
-            disabled={!isRecording || isStressTesting}
-          >
-            <Text style={styles.stressTestButtonText}>
-              {isStressTesting ? '⏳' : '💥'} No-Gap Burst
-            </Text>
-            <Text style={styles.stressTestSubtext}>15x back-to-back</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      {/* Extension Logs Section (iOS only) */}
-      {Platform.OS === 'ios' && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>📜 Extension Logs</Text>
-          <Text style={styles.description}>
-            Debug logs from the broadcast extension. Use these to diagnose
-            chunk/export issues.
-          </Text>
-
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: '#5856D6' }]}
-            onPress={() => {
-              handleRefreshLogs();
-              setShowLogs(true);
-            }}
-          >
-            <Text style={styles.buttonText}>📥 Load Logs</Text>
-          </TouchableOpacity>
-
-          {showLogs && (
-            <View style={styles.logsContainer}>
-              <View style={styles.logsHeader}>
-                <Text style={styles.logsCount}>
-                  {extensionLogs.length} log entries
-                </Text>
-                <TouchableOpacity onPress={handleRefreshLogs}>
-                  <Text style={styles.refreshButton}>🔄 Refresh</Text>
-                </TouchableOpacity>
-              </View>
-              <ScrollView style={styles.logsScroll} nestedScrollEnabled={true}>
-                {extensionLogs.length === 0 ? (
-                  <Text style={styles.logEntry}>
-                    No logs available. Start a recording to generate logs.
-                  </Text>
-                ) : (
-                  extensionLogs.map((log, index) => (
-                    <Text
-                      key={index}
-                      style={[
-                        styles.logEntry,
-                        log.includes('[ERROR]') && styles.logError,
-                        log.includes('[WARN]') && styles.logWarning,
-                      ]}
-                    >
-                      {log}
-                    </Text>
-                  ))
-                )}
-              </ScrollView>
-            </View>
-          )}
-        </View>
-      )}
-
-      {/* In-App Recording Section */}
-      {Platform.OS === 'ios' && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>In-App Recording</Text>
-          <View style={styles.buttonRow}>
+        {/* Floating Camera Overlay for Lipsync Testing */}
+        {showCameraOverlay && cameraPermission?.granted && (
+          <View style={styles.cameraOverlayContainer}>
+            <CameraView
+              style={styles.cameraOverlay}
+              facing="front"
+              mirror={true}
+            />
             <TouchableOpacity
-              style={[styles.button, styles.startButton, { flex: 1 }]}
-              onPress={handleStartInAppRecording}
+              style={styles.cameraOverlayClose}
+              onPress={() => setShowCameraOverlay(false)}
             >
-              <Text style={styles.buttonText}>Start</Text>
-            </TouchableOpacity>
-            <View style={{ width: 8 }} />
-            <TouchableOpacity
-              style={[styles.button, styles.stopButton, { flex: 1 }]}
-              onPress={handleStopInAppRecording}
-            >
-              <Text style={styles.buttonText}>Stop</Text>
+              <Text style={styles.cameraOverlayCloseText}>✕</Text>
             </TouchableOpacity>
           </View>
-          {inAppRecording && (
-            <View style={styles.playerContainer}>
-              <Text style={styles.playerLabel}>
-                {inAppRecording.name} ({formatSize(inAppRecording.size)})
-              </Text>
-              <VideoView
-                player={inAppPlayer}
-                style={styles.player}
-                contentFit="contain"
+        )}
+      </ScrollView>
+      {isGpuStressActive && (
+        <View pointerEvents="none" style={styles.gpuOverlay}>
+          {gpuLayers.map((layer, index) => {
+            const translateX = gpuAnimationValue.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, layer.dx],
+            });
+            const translateY = gpuAnimationValue.interpolate({
+              inputRange: [0, 1],
+              outputRange: [0, layer.dy],
+            });
+            const rotate = gpuAnimationValue.interpolate({
+              inputRange: [0, 1],
+              outputRange: ['0deg', `${layer.rotate}deg`],
+            });
+            return (
+              <Animated.View
+                key={`gpu-layer-${index}`}
+                style={[
+                  styles.gpuLayer,
+                  {
+                    width: layer.size,
+                    height: layer.size,
+                    backgroundColor: layer.color,
+                    top: layer.top,
+                    left: layer.left,
+                    transform: [
+                      { translateX },
+                      { translateY },
+                      { rotate },
+                      { scale: layer.scale },
+                    ],
+                  },
+                ]}
               />
-            </View>
-          )}
+            );
+          })}
         </View>
       )}
-
-      {/* Global Recording Player */}
-      {globalRecording && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Last Global Recording</Text>
-          <Text style={styles.playerLabel}>
-            {globalRecording.name} • {formatDuration(globalRecording.duration)}{' '}
-            • {formatSize(globalRecording.size)}
-          </Text>
-          <VideoView
-            player={globalPlayer}
-            style={styles.player}
-            contentFit="contain"
-          />
-        </View>
-      )}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#0A0A0A',
+  },
   container: {
     flex: 1,
     backgroundColor: '#0A0A0A',
@@ -1748,11 +2332,66 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 16,
   },
+  flexButton: {
+    flex: 1,
+  },
+  buttonSpacer: {
+    width: 8,
+  },
   startButton: {
     backgroundColor: '#34C759',
   },
   stopButton: {
     backgroundColor: '#FF3B30',
+  },
+  logsButton: {
+    backgroundColor: '#5856D6',
+  },
+  metricsButton: {
+    backgroundColor: '#0A84FF',
+    marginTop: 8,
+  },
+  thermalStatus: {
+    color: '#FF9F0A',
+    fontSize: 12,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  stressToggleRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  stressToggle: {
+    backgroundColor: '#2C2C2E',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#3A3A3C',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  stressToggleActive: {
+    backgroundColor: '#30D158',
+    borderColor: '#34C759',
+  },
+  stressToggleText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  gpuOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 2,
+    opacity: GPU_OVERLAY_OPACITY,
+  },
+  gpuLayer: {
+    position: 'absolute',
+    borderRadius: 24,
   },
   clearButton: {
     backgroundColor: '#48484A',
@@ -1955,5 +2594,42 @@ const styles = StyleSheet.create({
   },
   logWarning: {
     color: '#FFD60A',
+  },
+  // Camera overlay styles for lipsync testing
+  cameraOverlayContainer: {
+    position: 'absolute',
+    top: 100,
+    right: 16,
+    width: 150,
+    height: 200,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    borderWidth: 2,
+    borderColor: '#5856D6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  cameraOverlay: {
+    flex: 1,
+  },
+  cameraOverlayClose: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraOverlayCloseText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

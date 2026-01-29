@@ -152,6 +152,14 @@ abstract class HybridNitroScreenRecorderSpec: HybridObject() {
   
   @DoNotStrip
   @Keep
+  abstract fun getExtensionAudioMetrics(): String
+  
+  @DoNotStrip
+  @Keep
+  abstract fun clearExtensionAudioMetrics(): Unit
+  
+  @DoNotStrip
+  @Keep
   abstract fun clearRecordingCache(): Unit
 
   private external fun initHybrid(): HybridData

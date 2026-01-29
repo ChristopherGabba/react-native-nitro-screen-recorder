@@ -572,6 +572,55 @@ export function clearExtensionLogs(): void {
   return NitroScreenRecorderHybridObject.clearExtensionLogs();
 }
 
+/**
+ * Returns audio metrics from the broadcast extension as JSON for Sentry integration.
+ * Includes detailed metrics about audio capture: sample counts, durations,
+ * backpressure events, sync deltas, and drop counts by reason.
+ *
+ * Use this to attach to Sentry events when audio issues are detected.
+ *
+ * @platform iOS-only
+ * @returns JSON string containing audio metrics (parse with JSON.parse)
+ * @example
+ * ```typescript
+ * const metricsJson = getExtensionAudioMetrics();
+ * const metrics = JSON.parse(metricsJson);
+ * if (metrics.metrics?.length > 0) {
+ *   const lastMetrics = metrics.metrics[metrics.metrics.length - 1];
+ *   Sentry.addBreadcrumb({
+ *     category: 'audio',
+ *     data: lastMetrics,
+ *   });
+ * }
+ * ```
+ */
+export function getExtensionAudioMetrics(): string {
+  if (Platform.OS === 'android') {
+    return '{"metrics": [], "platform": "android"}';
+  }
+  return NitroScreenRecorderHybridObject.getExtensionAudioMetrics();
+}
+
+/**
+ * Clears audio metrics from UserDefaults.
+ * Call this before starting a new recording session to get fresh metrics.
+ *
+ * @platform iOS-only
+ * @example
+ * ```typescript
+ * clearExtensionAudioMetrics();
+ * startGlobalRecording({ options: { enableMic: true } });
+ * // ... recording ...
+ * const metrics = getExtensionAudioMetrics(); // Fresh metrics from this session
+ * ```
+ */
+export function clearExtensionAudioMetrics(): void {
+  if (Platform.OS === 'android') {
+    return;
+  }
+  return NitroScreenRecorderHybridObject.clearExtensionAudioMetrics();
+}
+
 // ============================================================================
 // UTILITIES
 // ============================================================================
