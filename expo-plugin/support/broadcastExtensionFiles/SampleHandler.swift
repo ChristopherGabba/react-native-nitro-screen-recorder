@@ -513,16 +513,19 @@ final class SampleHandler: RPBroadcastSampleHandler {
       // Create new writer with fresh file URLs
       self.createNewWriter()
       
+      // Verify writer was created successfully before sending ack
+      let writerReady = self.writer != nil
+      
       // WRITE ACK TOKEN - Main app polls for this to confirm processing
       if let groupID = hostAppGroupIdentifier,
          let token = UserDefaults(suiteName: groupID)?.string(forKey: "MarkChunkToken") {
         UserDefaults(suiteName: groupID)?.set(token, forKey: "LastProcessedMarkToken")
         UserDefaults(suiteName: groupID)?.synchronize()
-        self.logDebug("handleMarkChunk: Wrote ack token \(token)")
+        self.logDebug("handleMarkChunk: Wrote ack token \(token), writerReady=\(writerReady)")
       }
 
       let totalTime = Int(Date().timeIntervalSince(markStartTime) * 1000)
-      self.logInfo("handleMarkChunk: Complete (total lock time: \(totalTime)ms)")
+      self.logInfo("handleMarkChunk: Complete (total lock time: \(totalTime)ms, writerReady=\(writerReady))")
     }
   }
 
@@ -555,7 +558,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
       self.lastFinalizeChunkArrivalTime = arrivalTime
 
       self.logInfo(
-        "handleFinalizeChunk: Saving current chunk, chunkId=\(self.pendingChunkId ?? "nil"), frames=\(self.videoFramesThisWriter)"
+        "handleFinalizeChunk: Saving current chunk, chunkId=\(self.pendingChunkId ?? "nil"), frames=\(self.videoFramesThisWriter), hasWriter=\(self.writer != nil)"
       )
 
       // Mark capturing as done (will restart with next markChunkStart)
