@@ -475,16 +475,21 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
 
   // --- Chunking ---
 
-  override fun markChunkStart() {
-    Log.d(TAG, "📍 markChunkStart called")
-    globalRecordingService?.markChunkStart() ?: run {
-      Log.w(TAG, "⚠️ markChunkStart: Service not bound")
+  override fun markChunkStart(chunkId: String?): Promise<Double> {
+    return Promise.async {
+      Log.d(TAG, "📍 markChunkStart called with chunkId=$chunkId")
+      val startTime = System.currentTimeMillis()
+      globalRecordingService?.markChunkStart() ?: run {
+        Log.w(TAG, "⚠️ markChunkStart: Service not bound")
+      }
+      val elapsedMs = (System.currentTimeMillis() - startTime).toDouble()
+      return@async elapsedMs
     }
   }
 
-  override fun finalizeChunk(settledTimeMs: Double): Promise<ScreenRecordingFile?> {
+  override fun finalizeChunk(chunkId: String?, settledTimeMs: Double): Promise<ScreenRecordingFile?> {
     return Promise.async {
-      Log.d(TAG, "📦 finalizeChunk called with settledTimeMs=$settledTimeMs")
+      Log.d(TAG, "📦 finalizeChunk called with chunkId=$chunkId, settledTimeMs=$settledTimeMs")
       
       val service = globalRecordingService
       if (service == null) {

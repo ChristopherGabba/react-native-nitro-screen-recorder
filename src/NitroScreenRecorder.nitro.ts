@@ -77,6 +77,7 @@ export interface NitroScreenRecorder
   ): Promise<ScreenRecordingFile | undefined>;
   markChunkStart(chunkId: string | undefined): Promise<number>;
   finalizeChunk(
+    chunkId: string | undefined,
     settledTimeMs: number
   ): Promise<ScreenRecordingFile | undefined>;
   retrieveLastGlobalRecording(): ScreenRecordingFile | undefined;

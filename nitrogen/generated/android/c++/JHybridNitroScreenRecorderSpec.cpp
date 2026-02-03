@@ -234,9 +234,9 @@ namespace margelo::nitro::nitroscreenrecorder {
       return __promise;
     }();
   }
-  std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> JHybridNitroScreenRecorderSpec::finalizeChunk(double settledTimeMs) {
-    static const auto method = javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(double /* settledTimeMs */)>("finalizeChunk");
-    auto __result = method(_javaPart, settledTimeMs);
+  std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> JHybridNitroScreenRecorderSpec::finalizeChunk(const std::optional<std::string>& chunkId, double settledTimeMs) {
+    static const auto method = javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(jni::alias_ref<jni::JString> /* chunkId */, double /* settledTimeMs */)>("finalizeChunk");
+    auto __result = method(_javaPart, chunkId.has_value() ? jni::make_jstring(chunkId.value()) : nullptr, settledTimeMs);
     return [&]() {
       auto __promise = Promise<std::optional<ScreenRecordingFile>>::create();
       __result->cthis()->addOnResolvedListener([=](const jni::alias_ref<jni::JObject>& __boxedResult) {

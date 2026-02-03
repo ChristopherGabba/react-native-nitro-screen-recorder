@@ -364,9 +364,16 @@ open class HybridNitroScreenRecorderSpec_cxx {
   }
   
   @inline(__always)
-  public final func finalizeChunk(settledTimeMs: Double) -> bridge.Result_std__shared_ptr_Promise_std__optional_ScreenRecordingFile____ {
+  public final func finalizeChunk(chunkId: bridge.std__optional_std__string_, settledTimeMs: Double) -> bridge.Result_std__shared_ptr_Promise_std__optional_ScreenRecordingFile____ {
     do {
-      let __result = try self.__implementation.finalizeChunk(settledTimeMs: settledTimeMs)
+      let __result = try self.__implementation.finalizeChunk(chunkId: { () -> String? in
+        if bridge.has_value_std__optional_std__string_(chunkId) {
+          let __unwrapped = bridge.get_std__optional_std__string_(chunkId)
+          return String(__unwrapped)
+        } else {
+          return nil
+        }
+      }(), settledTimeMs: settledTimeMs)
       let __resultCpp = { () -> bridge.std__shared_ptr_Promise_std__optional_ScreenRecordingFile___ in
         let __promise = bridge.create_std__shared_ptr_Promise_std__optional_ScreenRecordingFile___()
         let __promiseHolder = bridge.wrap_std__shared_ptr_Promise_std__optional_ScreenRecordingFile___(__promise)

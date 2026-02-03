@@ -456,14 +456,17 @@ final class SampleHandler: RPBroadcastSampleHandler {
     writerQueue.sync {
       // TOKEN-BASED DEDUPE: Check token first - this is the primary deduplication mechanism
       if let groupID = hostAppGroupIdentifier,
-         let token = UserDefaults(suiteName: groupID)?.string(forKey: "MarkChunkToken")
+         let defaults = UserDefaults(suiteName: groupID)
       {
-        if token == self.lastMarkChunkToken {
-          self.logDebug("handleMarkChunk: Ignoring duplicate token \(token)")
-          return  // Skip duplicate - already processed this token
+        defaults.synchronize()  // Ensure we have latest data from main app
+        if let token = defaults.string(forKey: "MarkChunkToken") {
+          if token == self.lastMarkChunkToken {
+            self.logDebug("handleMarkChunk: Ignoring duplicate token \(token)")
+            return  // Skip duplicate - already processed this token
+          }
+          self.lastMarkChunkToken = token
+          self.logDebug("handleMarkChunk: Processing token \(token)")
         }
-        self.lastMarkChunkToken = token
-        self.logDebug("handleMarkChunk: Processing token \(token)")
       }
 
       // Secondary protection: time-based debounce (fallback if token check fails)
@@ -482,6 +485,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
       self.chunkStartedAt = Date().timeIntervalSince1970
 
       // Capture chunkId at the START of this chunk (before it could be overwritten)
+      // Note: Already synchronized at start of this function
       if let groupID = hostAppGroupIdentifier {
         self.pendingChunkId = UserDefaults(suiteName: groupID)?.string(forKey: "CurrentChunkId")
         self.logInfo("handleMarkChunk: Captured chunkId=\(self.pendingChunkId ?? "nil")")

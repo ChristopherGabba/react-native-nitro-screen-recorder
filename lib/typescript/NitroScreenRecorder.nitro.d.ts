@@ -27,7 +27,7 @@ export interface NitroScreenRecorder extends HybridObject<{
     startGlobalRecording(enableMic: boolean, separateAudioFile: boolean, onRecordingError: (error: RecordingError) => void): void;
     stopGlobalRecording(settledTimeMs: number): Promise<ScreenRecordingFile | undefined>;
     markChunkStart(chunkId: string | undefined): Promise<number>;
-    finalizeChunk(settledTimeMs: number): Promise<ScreenRecordingFile | undefined>;
+    finalizeChunk(chunkId: string | undefined, settledTimeMs: number): Promise<ScreenRecordingFile | undefined>;
     retrieveLastGlobalRecording(): ScreenRecordingFile | undefined;
     retrieveGlobalRecording(chunkId: string | undefined): ScreenRecordingFile | undefined;
     getExtensionStatus(): RawExtensionStatus;

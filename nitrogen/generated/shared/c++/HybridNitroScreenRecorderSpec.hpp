@@ -92,7 +92,7 @@ namespace margelo::nitro::nitroscreenrecorder {
       virtual void startGlobalRecording(bool enableMic, bool separateAudioFile, const std::function<void(const RecordingError& /* error */)>& onRecordingError) = 0;
       virtual std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> stopGlobalRecording(double settledTimeMs) = 0;
       virtual std::shared_ptr<Promise<double>> markChunkStart(const std::optional<std::string>& chunkId) = 0;
-      virtual std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> finalizeChunk(double settledTimeMs) = 0;
+      virtual std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> finalizeChunk(const std::optional<std::string>& chunkId, double settledTimeMs) = 0;
       virtual std::optional<ScreenRecordingFile> retrieveLastGlobalRecording() = 0;
       virtual std::optional<ScreenRecordingFile> retrieveGlobalRecording(const std::optional<std::string>& chunkId) = 0;
       virtual RawExtensionStatus getExtensionStatus() = 0;

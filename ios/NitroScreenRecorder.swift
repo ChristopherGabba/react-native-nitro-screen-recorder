@@ -751,8 +751,11 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
    The recording session continues uninterrupted.
    Returns the video file containing content from the last markChunkStart() (or recording start) until now.
    Uses event-driven waiting: listens for chunkSaved notification from extension.
+   
+   - Parameter chunkId: The chunk identifier that was passed to markChunkStart(). Must match for correct retrieval.
+   - Parameter settledTimeMs: Time to wait before retrieving the file. Default = 500ms.
    */
-  func finalizeChunk(settledTimeMs: Double) throws -> Promise<ScreenRecordingFile?> {
+  func finalizeChunk(chunkId: String?, settledTimeMs: Double) throws -> Promise<ScreenRecordingFile?> {
     return Promise.async {
       // Guard against concurrent calls
       guard !self.isFinalizingChunk else {
@@ -771,9 +774,8 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
         return nil
       }
 
-      // Capture the chunkId NOW from local storage (not UserDefaults)
-      // This prevents race condition if markChunkStart is called again before retrieve
-      let chunkIdToRetrieve = self.currentChunkId
+      // Use the chunkId passed by caller (explicit is better than implicit)
+      let chunkIdToRetrieve = chunkId
 
       // Setup listener for chunkSaved notification BEFORE sending finalizeChunk
       let center = CFNotificationCenterGetDarwinNotifyCenter()

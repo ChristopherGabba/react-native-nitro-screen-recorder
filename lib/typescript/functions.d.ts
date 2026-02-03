@@ -189,23 +189,25 @@ export declare function flushChunk(chunkId?: string): Promise<number>;
  * **Android behavior:** Recording pauses after this call. Call markChunkStart() to resume.
  *
  * @platform iOS, Android
+ * @param chunkId The chunk identifier that was passed to markChunkStart(). Must match
+ *   for correct retrieval. This ensures you get the exact chunk you're expecting.
  * @param options.settledTimeMs A "delay" time to wait before retrieving the file. Default = 500ms
  * @returns Promise resolving to the finalized chunk file
  * @example
  * ```typescript
- * markChunkStart();
+ * await markChunkStart('question-1');
  * // ... user does something important ...
- * const chunk1 = await finalizeChunk();
+ * const chunk1 = await finalizeChunk('question-1');
  * await uploadToServer(chunk1);
  *
  * // On Android, call markChunkStart() again to start next chunk
  * // On iOS, recording continues automatically
- * markChunkStart();
- * const chunk2 = await finalizeChunk();
+ * await markChunkStart('question-2');
+ * const chunk2 = await finalizeChunk('question-2');
  * await uploadToServer(chunk2);
  * ```
  */
-export declare function finalizeChunk(options?: {
+export declare function finalizeChunk(chunkId?: string, options?: {
     settledTimeMs: number;
 }): Promise<ScreenRecordingFile | undefined>;
 /**
