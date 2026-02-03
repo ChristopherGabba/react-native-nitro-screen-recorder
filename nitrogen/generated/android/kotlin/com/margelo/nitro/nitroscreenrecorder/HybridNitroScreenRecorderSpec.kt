@@ -120,7 +120,7 @@ abstract class HybridNitroScreenRecorderSpec: HybridObject() {
   
   @DoNotStrip
   @Keep
-  abstract fun markChunkStart(chunkId: String?): Unit
+  abstract fun markChunkStart(chunkId: String?): Promise<Double>
   
   @DoNotStrip
   @Keep

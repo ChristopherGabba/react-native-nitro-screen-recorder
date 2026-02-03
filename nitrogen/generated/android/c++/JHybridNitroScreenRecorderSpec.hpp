@@ -67,7 +67,7 @@ namespace margelo::nitro::nitroscreenrecorder {
     std::shared_ptr<Promise<void>> cancelInAppRecording() override;
     void startGlobalRecording(bool enableMic, bool separateAudioFile, const std::function<void(const RecordingError& /* error */)>& onRecordingError) override;
     std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> stopGlobalRecording(double settledTimeMs) override;
-    void markChunkStart(const std::optional<std::string>& chunkId) override;
+    std::shared_ptr<Promise<double>> markChunkStart(const std::optional<std::string>& chunkId) override;
     std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> finalizeChunk(double settledTimeMs) override;
     std::optional<ScreenRecordingFile> retrieveLastGlobalRecording() override;
     std::optional<ScreenRecordingFile> retrieveGlobalRecording(const std::optional<std::string>& chunkId) override;

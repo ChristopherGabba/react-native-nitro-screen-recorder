@@ -149,16 +149,18 @@ export declare function stopGlobalRecording(options?: {
  * @param chunkId Optional identifier for this chunk. Use this to guarantee correct
  *   retrieval when finalizeChunk() is called. Recommended for interview/questionnaire
  *   flows where you need to associate recordings with specific questions.
+ * @returns Elapsed time in milliseconds for the mark operation to complete
  * @example
  * ```typescript
  * startGlobalRecording({ onRecordingError: console.error });
  * // User navigates around (content is recorded but uncommitted)
- * markChunkStart('question-5'); // "I care about content starting NOW for question 5"
+ * const elapsedMs = await markChunkStart('question-5'); // "I care about content starting NOW for question 5"
+ * console.log(`Mark completed in ${elapsedMs}ms`);
  * // User does something important...
  * const chunk = await finalizeChunk(); // Get the chunk for question 5
  * ```
  */
-export declare function markChunkStart(chunkId?: string): void;
+export declare function markChunkStart(chunkId?: string): Promise<number>;
 /**
  * Discards any content recorded since the last markChunkStart() or finalizeChunk() call,
  * and begins recording to a fresh file. This is an alias for markChunkStart().
@@ -167,16 +169,17 @@ export declare function markChunkStart(chunkId?: string): void;
  *
  * @platform iOS, Android
  * @param chunkId Optional identifier for the new chunk
+ * @returns Elapsed time in milliseconds for the flush operation to complete
  * @example
  * ```typescript
- * markChunkStart('q1'); // Start tracking
+ * await markChunkStart('q1'); // Start tracking
  * // User does something...
- * flushChunk('q1'); // Oops, discard that, start fresh
+ * await flushChunk('q1'); // Oops, discard that, start fresh
  * // User does something else...
  * const chunk = await finalizeChunk(); // Save this instead
  * ```
  */
-export declare function flushChunk(chunkId?: string): void;
+export declare function flushChunk(chunkId?: string): Promise<number>;
 /**
  * Finalizes the current recording chunk and returns it.
  *

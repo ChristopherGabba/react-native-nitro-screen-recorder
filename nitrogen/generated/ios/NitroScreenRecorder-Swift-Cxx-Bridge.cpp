@@ -77,6 +77,14 @@ namespace margelo::nitro::nitroscreenrecorder::bridge::swift {
     };
   }
   
+  // pragma MARK: std::function<void(double /* result */)>
+  Func_void_double create_Func_void_double(void* NON_NULL swiftClosureWrapper) noexcept {
+    auto swiftClosure = NitroScreenRecorder::Func_void_double::fromUnsafe(swiftClosureWrapper);
+    return [swiftClosure = std::move(swiftClosure)](double result) mutable -> void {
+      swiftClosure.call(result);
+    };
+  }
+  
   // pragma MARK: std::shared_ptr<HybridNitroScreenRecorderSpec>
   std::shared_ptr<HybridNitroScreenRecorderSpec> create_std__shared_ptr_HybridNitroScreenRecorderSpec_(void* NON_NULL swiftUnsafePointer) noexcept {
     NitroScreenRecorder::HybridNitroScreenRecorderSpec_cxx swiftPart = NitroScreenRecorder::HybridNitroScreenRecorderSpec_cxx::fromUnsafe(swiftUnsafePointer);

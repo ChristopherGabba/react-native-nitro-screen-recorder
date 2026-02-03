@@ -218,9 +218,21 @@ namespace margelo::nitro::nitroscreenrecorder {
       return __promise;
     }();
   }
-  void JHybridNitroScreenRecorderSpec::markChunkStart(const std::optional<std::string>& chunkId) {
-    static const auto method = javaClassStatic()->getMethod<void(jni::alias_ref<jni::JString> /* chunkId */)>("markChunkStart");
-    method(_javaPart, chunkId.has_value() ? jni::make_jstring(chunkId.value()) : nullptr);
+  std::shared_ptr<Promise<double>> JHybridNitroScreenRecorderSpec::markChunkStart(const std::optional<std::string>& chunkId) {
+    static const auto method = javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(jni::alias_ref<jni::JString> /* chunkId */)>("markChunkStart");
+    auto __result = method(_javaPart, chunkId.has_value() ? jni::make_jstring(chunkId.value()) : nullptr);
+    return [&]() {
+      auto __promise = Promise<double>::create();
+      __result->cthis()->addOnResolvedListener([=](const jni::alias_ref<jni::JObject>& __boxedResult) {
+        auto __result = jni::static_ref_cast<jni::JDouble>(__boxedResult);
+        __promise->resolve(__result->value());
+      });
+      __result->cthis()->addOnRejectedListener([=](const jni::alias_ref<jni::JThrowable>& __throwable) {
+        jni::JniException __jniError(__throwable);
+        __promise->reject(std::make_exception_ptr(__jniError));
+      });
+      return __promise;
+    }();
   }
   std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> JHybridNitroScreenRecorderSpec::finalizeChunk(double settledTimeMs) {
     static const auto method = javaClassStatic()->getMethod<jni::local_ref<JPromise::javaobject>(double /* settledTimeMs */)>("finalizeChunk");

@@ -198,11 +198,13 @@ namespace margelo::nitro::nitroscreenrecorder {
       auto __value = std::move(__result.value());
       return __value;
     }
-    inline void markChunkStart(const std::optional<std::string>& chunkId) override {
+    inline std::shared_ptr<Promise<double>> markChunkStart(const std::optional<std::string>& chunkId) override {
       auto __result = _swiftPart.markChunkStart(chunkId);
       if (__result.hasError()) [[unlikely]] {
         std::rethrow_exception(__result.error());
       }
+      auto __value = std::move(__result.value());
+      return __value;
     }
     inline std::shared_ptr<Promise<std::optional<ScreenRecordingFile>>> finalizeChunk(double settledTimeMs) override {
       auto __result = _swiftPart.finalizeChunk(std::forward<decltype(settledTimeMs)>(settledTimeMs));

@@ -159,6 +159,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
   // Chunk ID for queue-based retrieval (captured at markChunk, used at save)
   private var pendingChunkId: String?
 
+  // Token-based deduplication for markChunk (tracks last processed token)
+  private var lastMarkChunkToken: String? = nil
+
   // MARK: – Init
   override init() {
     let uuid = UUID().uuidString
@@ -250,6 +253,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
     isBroadcastActive = true
     updateExtensionStatus()
 
+    // Reset mark token tracking for fresh session
+    lastMarkChunkToken = nil
+
     logInfo("broadcastStarted: Broadcast session starting...")
 
     // Configure audio session for Bluetooth support (AirPods, etc.)
@@ -328,12 +334,14 @@ final class SampleHandler: RPBroadcastSampleHandler {
       // Non-critical error, continue with broadcast
     }
 
-    // Also clear the stale pending chunks queue from previous sessions
+    // Also clear the stale pending chunks queue and mark tokens from previous sessions
     if let defaults = UserDefaults(suiteName: groupID) {
       defaults.removeObject(forKey: "PendingChunks")
       defaults.removeObject(forKey: "CurrentChunkId")
+      defaults.removeObject(forKey: "MarkChunkToken")
+      defaults.removeObject(forKey: "LastProcessedMarkToken")
       defaults.synchronize()
-      debugPrint("✅ Cleared stale PendingChunks queue")
+      debugPrint("✅ Cleared stale PendingChunks queue and mark tokens")
     }
   }
 
@@ -442,22 +450,33 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
   private func handleMarkChunk() {
     // Capture arrival time BEFORE entering sync to properly debounce duplicate notifications
-    // (notifications are sent twice 50ms apart for reliability, but we only want to process once)
     let arrivalTime = Date().timeIntervalSince1970
     let markStartTime = Date()
 
     writerQueue.sync {
-      // Debounce: ignore if this notification arrived within threshold of the last one
+      // TOKEN-BASED DEDUPE: Check token first - this is the primary deduplication mechanism
+      if let groupID = hostAppGroupIdentifier,
+         let token = UserDefaults(suiteName: groupID)?.string(forKey: "MarkChunkToken")
+      {
+        if token == self.lastMarkChunkToken {
+          self.logDebug("handleMarkChunk: Ignoring duplicate token \(token)")
+          return  // Skip duplicate - already processed this token
+        }
+        self.lastMarkChunkToken = token
+        self.logDebug("handleMarkChunk: Processing token \(token)")
+      }
+
+      // Secondary protection: time-based debounce (fallback if token check fails)
       if arrivalTime - self.lastMarkChunkArrivalTime < self.debounceThreshold {
         self.logDebug(
-          "handleMarkChunk: Ignoring duplicate notification (debounce, delta=\(Int((arrivalTime - self.lastMarkChunkArrivalTime) * 1000))ms)"
+          "handleMarkChunk: Ignoring (debounce, delta=\(Int((arrivalTime - self.lastMarkChunkArrivalTime) * 1000))ms)"
         )
         return
       }
       self.lastMarkChunkArrivalTime = arrivalTime
 
       self.logInfo(
-        "handleMarkChunk: Discarding chunk (lock wait: \(Int(Date().timeIntervalSince(markStartTime) * 1000))ms, writerFrames: \(self.videoFramesThisWriter), totalFrames: \(self.totalVideoFrames))"
+        "handleMarkChunk: Processing... (lock wait: \(Int(Date().timeIntervalSince(markStartTime) * 1000))ms, writerFrames: \(self.videoFramesThisWriter), totalFrames: \(self.totalVideoFrames))"
       )
       self.isCapturing = true
       self.chunkStartedAt = Date().timeIntervalSince1970
@@ -493,8 +512,17 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
       // Create new writer with fresh file URLs
       self.createNewWriter()
+      
+      // WRITE ACK TOKEN - Main app polls for this to confirm processing
+      if let groupID = hostAppGroupIdentifier,
+         let token = UserDefaults(suiteName: groupID)?.string(forKey: "MarkChunkToken") {
+        UserDefaults(suiteName: groupID)?.set(token, forKey: "LastProcessedMarkToken")
+        UserDefaults(suiteName: groupID)?.synchronize()
+        self.logDebug("handleMarkChunk: Wrote ack token \(token)")
+      }
+
       let totalTime = Int(Date().timeIntervalSince(markStartTime) * 1000)
-      self.logInfo("handleMarkChunk: New chunk started (total lock time: \(totalTime)ms)")
+      self.logInfo("handleMarkChunk: Complete (total lock time: \(totalTime)ms)")
     }
   }
 
