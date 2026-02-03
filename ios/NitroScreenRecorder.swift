@@ -798,14 +798,10 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
         .deliverImmediately
       )
 
-      // Send finalizeChunk notification to extension (send twice for reliability)
+      // Send finalizeChunk notification to extension (single notification only)
       let notif = "com.nitroscreenrecorder.finalizeChunk" as CFString
       let darwinCenter = CFNotificationCenterGetDarwinNotifyCenter()
       CFNotificationCenterPostNotification(darwinCenter, CFNotificationName(notif), nil, nil, true)
-      // Small delay then send again to increase delivery reliability
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-        CFNotificationCenterPostNotification(darwinCenter, CFNotificationName(notif), nil, nil, true)
-      }
 
       // Wait for chunkSaved signal OR timeout - then fall back to polling
       // Wait 500ms for notification, then poll aggressively

@@ -694,18 +694,25 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
       // Generate fresh UUID for each attempt
       let uuid = UUID().uuidString
+      
+      // Include chunkId in filename for verification (sanitize to be filesystem-safe)
+      let safeChunkId = pendingChunkId?
+        .replacingOccurrences(of: "/", with: "-")
+        .replacingOccurrences(of: ":", with: "-")
+        .replacingOccurrences(of: " ", with: "_")
+      let filePrefix = safeChunkId != nil ? "\(safeChunkId!)_\(uuid)" : uuid
 
-      // Generate new file URLs
+      // Generate new file URLs with chunkId prefix
       nodeURL = fileManager.temporaryDirectory
-        .appendingPathComponent(uuid)
+        .appendingPathComponent(filePrefix)
         .appendingPathExtension(for: .mpeg4Movie)
 
       audioNodeURL = fileManager.temporaryDirectory
-        .appendingPathComponent("\(uuid)_mic_audio")
+        .appendingPathComponent("\(filePrefix)_mic_audio")
         .appendingPathExtension("m4a")
 
       appAudioNodeURL = fileManager.temporaryDirectory
-        .appendingPathComponent("\(uuid)_app_audio")
+        .appendingPathComponent("\(filePrefix)_app_audio")
         .appendingPathExtension("m4a")
 
       // Aggressively clean up any existing files at these paths

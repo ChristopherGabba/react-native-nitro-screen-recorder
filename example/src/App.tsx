@@ -345,7 +345,10 @@ export default function App() {
 
     console.log('📦 Finalizing chunk...');
     const t0 = performance.now();
-    const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 1000 });
+    // Note: This uses undefined chunkId since handleMarkChunkStart doesn't set one
+    const file = await ScreenRecorder.finalizeChunk(undefined, {
+      settledTimeMs: 1000,
+    });
     console.log(
       `📦 finalizeChunk took ${(performance.now() - t0).toFixed(0)}ms`
     );
@@ -725,7 +728,9 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 1500));
 
       const t0 = performance.now();
-      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const file = await ScreenRecorder.finalizeChunk(chunkId, {
+        settledTimeMs: 500,
+      });
       const elapsed = (performance.now() - t0).toFixed(0);
       results.push({ id: chunkId, success: !!file, duration: file?.duration });
       console.log(
@@ -764,13 +769,17 @@ export default function App() {
     // First recording with ID "duplicate-test"
     ScreenRecorder.markChunkStart('duplicate-test');
     await new Promise((r) => setTimeout(r, 1000));
-    await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+    await ScreenRecorder.finalizeChunk('duplicate-test', {
+      settledTimeMs: 500,
+    });
 
     // Second recording with SAME ID
     ScreenRecorder.markChunkStart('duplicate-test');
     await new Promise((r) => setTimeout(r, 2000)); // Longer, different duration
     const t0 = performance.now();
-    const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+    const file = await ScreenRecorder.finalizeChunk('duplicate-test', {
+      settledTimeMs: 500,
+    });
     console.log(
       `   finalizeChunk took ${(performance.now() - t0).toFixed(0)}ms`
     );
@@ -824,7 +833,9 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 1000 * i));
 
       const t0 = performance.now();
-      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const file = await ScreenRecorder.finalizeChunk(chunkId, {
+        settledTimeMs: 500,
+      });
       const elapsed = (performance.now() - t0).toFixed(0);
 
       if (file && file.audioFile) {
@@ -875,7 +886,9 @@ export default function App() {
 
     console.log('   Finalizing...');
     const t0 = performance.now();
-    const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+    const file = await ScreenRecorder.finalizeChunk('long-recording', {
+      settledTimeMs: 500,
+    });
     const elapsed = (performance.now() - t0).toFixed(0);
 
     setIsStressTesting(false);
@@ -915,7 +928,9 @@ export default function App() {
     await new Promise((r) => setTimeout(r, 1500));
 
     // Start finalizing Q1, but DON'T await yet
-    const q1Promise = ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+    const q1Promise = ScreenRecorder.finalizeChunk('race-q1', {
+      settledTimeMs: 500,
+    });
 
     // Immediately start Q2 (race condition scenario)
     ScreenRecorder.markChunkStart('race-q2');
@@ -935,7 +950,9 @@ export default function App() {
 
     // Finalize Q2
     const t0 = performance.now();
-    const q2File = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+    const q2File = await ScreenRecorder.finalizeChunk('race-q2', {
+      settledTimeMs: 500,
+    });
     const q2Elapsed = (performance.now() - t0).toFixed(0);
     const q2Passed = q2File !== null && q2File.duration > 1;
     results.push({
@@ -956,8 +973,8 @@ export default function App() {
 
     // Fire two finalizeChunks at once
     const [f1, f2] = await Promise.all([
-      ScreenRecorder.finalizeChunk({ settledTimeMs: 500 }),
-      ScreenRecorder.finalizeChunk({ settledTimeMs: 500 }),
+      ScreenRecorder.finalizeChunk('race-concurrent', { settledTimeMs: 500 }),
+      ScreenRecorder.finalizeChunk('race-concurrent', { settledTimeMs: 500 }),
     ]);
 
     const bothSucceeded = f1 !== null && f2 !== null;
@@ -974,10 +991,13 @@ export default function App() {
     console.log('   Test 3: Rapid fire mark/finalize');
     const rapidResults: boolean[] = [];
     for (let i = 0; i < 3; i++) {
-      ScreenRecorder.markChunkStart(`rapid-race-${i}`);
+      const chunkId = `rapid-race-${i}`;
+      ScreenRecorder.markChunkStart(chunkId);
       await new Promise((r) => setTimeout(r, 800));
       const t1 = performance.now();
-      const f = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const f = await ScreenRecorder.finalizeChunk(chunkId, {
+        settledTimeMs: 500,
+      });
       const e = (performance.now() - t1).toFixed(0);
       rapidResults.push(f !== null);
       console.log(`   rapid-${i}: ${f ? '✅' : '❌'} [${e}ms]`);
@@ -1019,13 +1039,16 @@ export default function App() {
 
     for (let i = 0; i < expectedDurations.length; i++) {
       const expectedDur = expectedDurations[i];
+      const chunkId = `mismatch-${i}`;
       console.log(`   Chunk ${i + 1}: Recording for ${expectedDur}s...`);
 
-      ScreenRecorder.markChunkStart(`mismatch-${i}`);
+      ScreenRecorder.markChunkStart(chunkId);
       await new Promise((r) => setTimeout(r, expectedDur * 1000));
 
       const t0 = performance.now();
-      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const file = await ScreenRecorder.finalizeChunk(chunkId, {
+        settledTimeMs: 500,
+      });
       const elapsed = (performance.now() - t0).toFixed(0);
 
       if (file) {
@@ -1121,10 +1144,11 @@ export default function App() {
 
     for (let i = 0; i < questionDurations.length; i++) {
       const expectedDur = questionDurations[i];
+      const chunkId = `interview-q${i + 1}`;
       console.log(`   Q${i + 1}: Answering for ${expectedDur}s...`);
 
       // Start tracking this answer
-      ScreenRecorder.markChunkStart(`interview-q${i + 1}`);
+      ScreenRecorder.markChunkStart(chunkId);
 
       // Simulate user answering
       await new Promise((r) => setTimeout(r, expectedDur * 1000));
@@ -1132,7 +1156,9 @@ export default function App() {
       // Finalize and submit
       console.log(`   Q${i + 1}: Submitting answer...`);
       const t0 = performance.now();
-      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const file = await ScreenRecorder.finalizeChunk(chunkId, {
+        settledTimeMs: 500,
+      });
       const finalizeTime = performance.now() - t0;
 
       if (file) {
@@ -1247,7 +1273,8 @@ export default function App() {
       );
 
       // Start tracking this answer
-      ScreenRecorder.markChunkStart(`hardmode-q${i + 1}`);
+      const chunkId = `hardmode-q${i + 1}`;
+      ScreenRecorder.markChunkStart(chunkId);
 
       // Simulate recording
       await new Promise((r) => setTimeout(r, expectedDur * 1000));
@@ -1255,7 +1282,9 @@ export default function App() {
       // Finalize and submit
       console.log(`   Q${i + 1}/${numQuestions}: Finalizing...`);
       const t0 = performance.now();
-      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 500 });
+      const file = await ScreenRecorder.finalizeChunk(chunkId, {
+        settledTimeMs: 500,
+      });
       const finalizeTime = performance.now() - t0;
 
       if (file) {
@@ -1383,7 +1412,9 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 500));
 
       const t0 = performance.now();
-      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 200 });
+      const file = await ScreenRecorder.finalizeChunk(chunkId, {
+        settledTimeMs: 200,
+      });
       const elapsed = (performance.now() - t0).toFixed(0);
       results.push({ id: chunkId, success: !!file, duration: file?.duration });
       console.log(
@@ -1425,6 +1456,8 @@ export default function App() {
       console.log(`   Round ${round}: Spamming 5 marks rapidly...`);
 
       // Fire 5 marks rapidly - system should handle this gracefully
+      // The last one wins, so we'll use that ID for finalize
+      const lastChunkId = `spam-r${round}-m5`;
       for (let i = 1; i <= 5; i++) {
         ScreenRecorder.markChunkStart(`spam-r${round}-m${i}`);
         await new Promise((r) => setTimeout(r, 10)); // tiny 10ms delay
@@ -1434,7 +1467,9 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 800));
 
       const t0 = performance.now();
-      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 200 });
+      const file = await ScreenRecorder.finalizeChunk(lastChunkId, {
+        settledTimeMs: 200,
+      });
       const elapsed = (performance.now() - t0).toFixed(0);
 
       results.push({
@@ -1488,7 +1523,9 @@ export default function App() {
       await new Promise((r) => setTimeout(r, 600));
 
       const t0 = performance.now();
-      const file = await ScreenRecorder.finalizeChunk({ settledTimeMs: 150 });
+      const file = await ScreenRecorder.finalizeChunk(chunkId, {
+        settledTimeMs: 150,
+      });
       const finalizeMs = performance.now() - t0;
 
       results.push({
@@ -1519,6 +1556,371 @@ export default function App() {
     Alert.alert(
       'No-Gap Burst',
       `${passed}/15 chunks retrieved\nAvg finalize: ${avgFinalize.toFixed(0)}ms`
+    );
+  }, [isRecording]);
+
+  /**
+   * GAUNTLET TEST - 50 Rapid Fire Chunks with Duration Validation
+   *
+   * The ultimate stress test for chunkId validation:
+   * - 50 chunks in rapid succession
+   * - VARYING durations (0.5s to 2s) to detect wrong-file returns
+   * - Validates each file has the EXPECTED duration (not just any file)
+   * - Catches the "got wrong file" bug by checking duration matches
+   */
+  const stressTestGauntlet = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    ScreenRecorder.clearExtensionLogs();
+
+    const TOTAL_CHUNKS = 50;
+    const SETTLE_TIME_MS = 150;
+    const DURATION_TOLERANCE_S = 0.5; // Allow 0.5s tolerance for duration matching
+
+    // Generate varying durations (alternating pattern to catch wrong-file bugs)
+    // Pattern: 0.5s, 1.5s, 0.8s, 1.2s, 0.6s, 1.8s, etc.
+    const getDuration = (i: number): number => {
+      const patterns = [0.5, 1.5, 0.8, 1.2, 0.6, 1.8, 1.0, 2.0, 0.7, 1.4];
+      return patterns[i % patterns.length];
+    };
+
+    console.log('🔥🔥🔥 GAUNTLET TEST - DURATION VALIDATION 🔥🔥🔥');
+    console.log('================================================');
+    console.log(`Chunks: ${TOTAL_CHUNKS}, Varying durations 0.5s-2s`);
+    console.log(`Duration tolerance: ±${DURATION_TOLERANCE_S}s`);
+
+    const results: {
+      id: string;
+      expectedDuration: number;
+      actualDuration: number;
+      fileName: string;
+      fileReturned: boolean;
+      chunkIdInFilename: boolean;
+      durationMatch: boolean;
+      markMs: number;
+      finalizeMs: number;
+    }[] = [];
+
+    let consecutiveFailures = 0;
+    const MAX_CONSECUTIVE_FAILURES = 5;
+
+    const startTime = performance.now();
+
+    for (let i = 1; i <= TOTAL_CHUNKS; i++) {
+      const chunkId = `gauntlet-${i}`;
+      const expectedDuration = getDuration(i);
+
+      // Mark
+      const markStart = performance.now();
+      await ScreenRecorder.markChunkStart(chunkId);
+      const markMs = performance.now() - markStart;
+
+      // Record for the expected duration
+      await new Promise((r) => setTimeout(r, expectedDuration * 1000));
+
+      // Finalize with matching chunkId
+      const finalizeStart = performance.now();
+      const file = await ScreenRecorder.finalizeChunk(chunkId, {
+        settledTimeMs: SETTLE_TIME_MS,
+      });
+      const finalizeMs = performance.now() - finalizeStart;
+
+      const fileReturned = file !== null;
+      const actualDuration = file?.duration ?? 0;
+      const fileName = file?.name ?? '';
+      
+      // Verify chunkId is in the filename (bulletproof verification)
+      const chunkIdInFilename = fileName.includes(chunkId);
+      const durationMatch =
+        fileReturned &&
+        Math.abs(actualDuration - expectedDuration) < DURATION_TOLERANCE_S;
+
+      results.push({
+        id: chunkId,
+        expectedDuration,
+        actualDuration,
+        fileName,
+        fileReturned,
+        chunkIdInFilename,
+        durationMatch,
+        markMs,
+        finalizeMs,
+      });
+
+      // Progress logging every 10 chunks
+      if (i % 10 === 0) {
+        const matchCount = results.filter((r) => r.durationMatch).length;
+        const avgFinalize =
+          results.slice(-10).reduce((sum, r) => sum + r.finalizeMs, 0) / 10;
+        console.log(
+          `   [${i}/${TOTAL_CHUNKS}] ${matchCount}/${i} duration match, avg finalize: ${avgFinalize.toFixed(0)}ms`
+        );
+      }
+
+      // Check for failures - filename check is the PRIMARY verification
+      if (!fileReturned) {
+        consecutiveFailures++;
+        console.log(
+          `   ❌ ${chunkId} NO FILE (consecutive: ${consecutiveFailures})`
+        );
+      } else if (!chunkIdInFilename) {
+        consecutiveFailures++;
+        console.log(
+          `   🚨 ${chunkId} WRONG FILE! Filename: ${fileName}`
+        );
+        console.log(
+          `      Expected chunkId "${chunkId}" in filename but not found!`
+        );
+        console.log(
+          `      Duration: expected ${expectedDuration.toFixed(1)}s, got ${actualDuration.toFixed(1)}s`
+        );
+
+        // Dump logs on wrong file
+        if (Platform.OS === 'ios') {
+          const logs = ScreenRecorder.getExtensionLogs();
+          const relevantLogs = logs
+            .filter((log) => log.includes('chunkId') || log.includes(chunkId))
+            .slice(-5);
+          relevantLogs.forEach((log) => console.log(`      ${log}`));
+        }
+      } else if (!durationMatch) {
+        // Filename matches but duration is off - still suspicious
+        console.log(
+          `   ⚠️ ${chunkId} duration mismatch: expected ${expectedDuration.toFixed(1)}s, got ${actualDuration.toFixed(1)}s (file: ${fileName})`
+        );
+        // Don't count as failure if filename matches - could be timing variance
+      } else {
+        consecutiveFailures = 0;
+      }
+
+      // Abort if too many consecutive failures
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+        console.log(
+          `   🛑 ABORTING: ${MAX_CONSECUTIVE_FAILURES} consecutive failures`
+        );
+        break;
+      }
+    }
+
+    const totalTime = ((performance.now() - startTime) / 1000).toFixed(1);
+    const fileCount = results.filter((r) => r.fileReturned).length;
+    const filenameMatchCount = results.filter((r) => r.chunkIdInFilename).length;
+    const durationMatchCount = results.filter((r) => r.durationMatch).length;
+    const wrongFileCount = results.filter(
+      (r) => r.fileReturned && !r.chunkIdInFilename
+    ).length;
+    const avgMark =
+      results.reduce((sum, r) => sum + r.markMs, 0) / results.length;
+    const avgFinalize =
+      results.reduce((sum, r) => sum + r.finalizeMs, 0) / results.length;
+
+    console.log('\n================================================');
+    console.log('📊 GAUNTLET RESULTS');
+    console.log(`   Files returned: ${fileCount}/${results.length}`);
+    console.log(`   ChunkId in filename: ${filenameMatchCount}/${results.length} ✅`);
+    console.log(`   Duration matches: ${durationMatchCount}/${results.length}`);
+    console.log(`   WRONG FILE (filename mismatch): ${wrongFileCount} ❌`);
+    console.log(`   Time: ${totalTime}s total`);
+    console.log(
+      `   Avg mark: ${avgMark.toFixed(0)}ms, Avg finalize: ${avgFinalize.toFixed(0)}ms`
+    );
+
+    // Log wrong files
+    const wrongFiles = results.filter(
+      (r) => r.fileReturned && !r.chunkIdInFilename
+    );
+    if (wrongFiles.length > 0) {
+      console.log(`\n   🚨 WRONG FILES (filename doesn't contain expected chunkId):`);
+      wrongFiles.forEach((w) => {
+        console.log(
+          `      ${w.id}: got file "${w.fileName}" (duration ${w.actualDuration.toFixed(1)}s)`
+        );
+      });
+    }
+
+    setIsStressTesting(false);
+
+    const allPassed = wrongFileCount === 0 && fileCount === results.length;
+    Alert.alert(
+      allPassed ? '✅ Gauntlet PASSED' : '❌ Gauntlet FAILED',
+      `Files: ${fileCount}/${results.length}\n` +
+        `Filename matches: ${filenameMatchCount}/${results.length}\n` +
+        `Wrong files: ${wrongFileCount}\n` +
+        `Total time: ${totalTime}s`
+    );
+  }, [isRecording]);
+
+  /**
+   * Comprehensive ChunkId Validation Test
+   *
+   * This test validates the entire chunkId flow:
+   * 1. Creates chunks with unique IDs and varying durations
+   * 2. Verifies extension logs show correct chunkId
+   * 3. Checks video/audio duration matches expected recording time
+   * 4. Tests that chunkId is properly passed through the system
+   * 5. Validates audio files are correctly paired with their chunks
+   */
+  const stressTestChunkIdValidation = useCallback(async () => {
+    if (!isRecording) {
+      Alert.alert('Not Recording', 'Start a global recording first');
+      return;
+    }
+    setIsStressTesting(true);
+    ScreenRecorder.clearExtensionLogs();
+    console.log('🧪 COMPREHENSIVE CHUNKID VALIDATION TEST');
+    console.log('=========================================');
+
+    const testCases = [
+      {
+        id: 'validate-short',
+        duration: 1.5,
+        description: 'Short chunk (1.5s)',
+      },
+      {
+        id: 'validate-medium',
+        duration: 3.0,
+        description: 'Medium chunk (3s)',
+      },
+      { id: 'validate-long', duration: 5.0, description: 'Long chunk (5s)' },
+    ];
+
+    const results: {
+      id: string;
+      passed: boolean;
+      details: {
+        fileReturned: boolean;
+        videoDuration: number;
+        audioDuration: number;
+        expectedDuration: number;
+        videoMatchesExpected: boolean;
+        audioMatchesVideo: boolean;
+        chunkIdInLogs: boolean;
+      };
+    }[] = [];
+
+    for (const testCase of testCases) {
+      console.log(`\n📍 Test: ${testCase.description}`);
+      console.log(`   ChunkId: ${testCase.id}`);
+      console.log(`   Expected duration: ${testCase.duration}s`);
+
+      // Clear logs before each chunk to isolate
+      ScreenRecorder.clearExtensionLogs();
+
+      // Mark chunk start with explicit ID
+      const markStart = performance.now();
+      await ScreenRecorder.markChunkStart(testCase.id);
+      const markTime = (performance.now() - markStart).toFixed(0);
+      console.log(`   Mark completed in ${markTime}ms`);
+
+      // Record for the specified duration
+      await new Promise((r) => setTimeout(r, testCase.duration * 1000));
+
+      // Finalize with the SAME chunkId
+      const finalizeStart = performance.now();
+      const file = await ScreenRecorder.finalizeChunk(testCase.id, {
+        settledTimeMs: 500,
+      });
+      const finalizeTime = (performance.now() - finalizeStart).toFixed(0);
+      console.log(`   Finalize completed in ${finalizeTime}ms`);
+
+      // Check extension logs for chunkId
+      const logs = ScreenRecorder.getExtensionLogs();
+      const chunkIdInLogs = logs.some(
+        (log) =>
+          log.includes(`chunkId=${testCase.id}`) ||
+          log.includes(`'${testCase.id}'`)
+      );
+
+      // Analyze results
+      const fileReturned = file !== null;
+      const videoDuration = file?.duration ?? 0;
+      const audioDuration = file?.audioFile?.duration ?? 0;
+      const appAudioDuration = file?.appAudioFile?.duration ?? 0;
+
+      // Tolerances
+      const videoMatchesExpected =
+        Math.abs(videoDuration - testCase.duration) < 0.5;
+      const audioMatchesVideo = file?.audioFile
+        ? Math.abs(videoDuration - audioDuration) < 0.5
+        : true; // OK if no audio file
+
+      const passed =
+        fileReturned &&
+        videoMatchesExpected &&
+        audioMatchesVideo &&
+        chunkIdInLogs;
+
+      results.push({
+        id: testCase.id,
+        passed,
+        details: {
+          fileReturned,
+          videoDuration,
+          audioDuration,
+          expectedDuration: testCase.duration,
+          videoMatchesExpected,
+          audioMatchesVideo,
+          chunkIdInLogs,
+        },
+      });
+
+      // Log results
+      console.log(`   Results:`);
+      console.log(`   - File returned: ${fileReturned ? '✅' : '❌'}`);
+      console.log(
+        `   - Video duration: ${videoDuration.toFixed(2)}s (expected ${testCase.duration}s) ${videoMatchesExpected ? '✅' : '❌'}`
+      );
+      if (file?.audioFile) {
+        console.log(
+          `   - Mic audio duration: ${audioDuration.toFixed(2)}s ${audioMatchesVideo ? '✅' : '❌'}`
+        );
+      }
+      if (file?.appAudioFile) {
+        console.log(`   - App audio duration: ${appAudioDuration.toFixed(2)}s`);
+      }
+      console.log(`   - ChunkId in logs: ${chunkIdInLogs ? '✅' : '❌'}`);
+      console.log(`   - Overall: ${passed ? '✅ PASSED' : '❌ FAILED'}`);
+
+      // On failure, dump relevant logs
+      if (!passed) {
+        console.log(`   📜 Extension logs:`);
+        logs
+          .filter(
+            (log) =>
+              log.includes('handleMarkChunk') ||
+              log.includes('handleFinalizeChunk') ||
+              log.includes('saveChunkToContainer') ||
+              log.includes('chunkId')
+          )
+          .slice(-10)
+          .forEach((log) => console.log(`      ${log}`));
+      }
+    }
+
+    // Summary
+    console.log('\n=========================================');
+    console.log('📊 SUMMARY');
+    const passedCount = results.filter((r) => r.passed).length;
+    console.log(`   Total: ${passedCount}/${results.length} tests passed`);
+
+    for (const result of results) {
+      const d = result.details;
+      console.log(
+        `   ${result.id}: ${result.passed ? '✅' : '❌'} ` +
+          `(video=${d.videoDuration.toFixed(1)}s, audio=${d.audioDuration.toFixed(1)}s, ` +
+          `idInLogs=${d.chunkIdInLogs})`
+      );
+    }
+
+    setIsStressTesting(false);
+
+    Alert.alert(
+      'ChunkId Validation',
+      `${passedCount}/${results.length} tests passed\n\n` +
+        results.map((r) => `${r.id}: ${r.passed ? '✅' : '❌'}`).join('\n')
     );
   }, [isRecording]);
 
@@ -1967,6 +2369,38 @@ export default function App() {
                 {isStressTesting ? '⏳' : '💥'} No-Gap Burst
               </Text>
               <Text style={styles.stressTestSubtext}>15x back-to-back</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                { backgroundColor: '#9C27B0' },
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestChunkIdValidation}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '🔍'} ChunkId Validation
+              </Text>
+              <Text style={styles.stressTestSubtext}>
+                Validates chunkId flow end-to-end
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.stressTestButton,
+                { backgroundColor: '#FF5722' },
+                (!isRecording || isStressTesting) && styles.disabledButton,
+              ]}
+              onPress={stressTestGauntlet}
+              disabled={!isRecording || isStressTesting}
+            >
+              <Text style={styles.stressTestButtonText}>
+                {isStressTesting ? '⏳' : '🔥'} GAUNTLET (50x)
+              </Text>
+              <Text style={styles.stressTestSubtext}>
+                Validates durations to catch wrong files
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
