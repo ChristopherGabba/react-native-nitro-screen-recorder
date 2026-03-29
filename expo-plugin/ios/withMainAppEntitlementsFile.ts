@@ -2,6 +2,62 @@ import { type ConfigPlugin, withXcodeProject } from '@expo/config-plugins';
 import { type ConfigProps } from '../@types';
 import { ScreenRecorderLog } from '../support/ScreenRecorderLog';
 
+const getNormalizedString = (value: unknown) => {
+  return typeof value === 'string' ? value.replace(/"/g, '') : undefined;
+};
+
+const getChildReferenceKey = (child: unknown) => {
+  if (typeof child === 'string') {
+    return child;
+  }
+
+  const isChildObject = typeof child === 'object' && child !== null;
+
+  if (!isChildObject) {
+    return undefined;
+  }
+
+  return typeof (child as { value?: unknown }).value === 'string'
+    ? (child as { value: string }).value
+    : undefined;
+};
+
+const getMainAppEntitlementsPath = (
+  xcodeProject: any,
+  fallbackGroupName: string,
+  fallbackEntitlementsFileName: string
+) => {
+  const configurations = xcodeProject.pbxXCBuildConfigurationSection();
+
+  for (const key in configurations) {
+    const config = configurations[key];
+    const buildSettings = config.buildSettings;
+
+    if (!buildSettings) {
+      continue;
+    }
+
+    const productName = getNormalizedString(buildSettings.PRODUCT_NAME);
+    const isExtensionProduct =
+      !!productName &&
+      (productName.includes('Extension') || productName.includes('Widget'));
+
+    if (isExtensionProduct) {
+      continue;
+    }
+
+    const codeSignEntitlements = getNormalizedString(
+      buildSettings.CODE_SIGN_ENTITLEMENTS
+    );
+
+    if (codeSignEntitlements) {
+      return codeSignEntitlements;
+    }
+  }
+
+  return `${fallbackGroupName}/${fallbackEntitlementsFileName}`;
+};
+
 /**
  * Add the main app's entitlements file to the Xcode project navigator
  * This ensures the .entitlements file is visible in Xcode's file tree
@@ -12,27 +68,11 @@ export const withMainAppEntitlementsFile: ConfigPlugin<ConfigProps> = (
   return withXcodeProject(config, (newConfig) => {
     const xcodeProject = newConfig.modResults;
     const projectName = newConfig.name;
-    const entitlementsFileName = `${projectName}.entitlements`;
-    const entitlementsPath = `${projectName}/${entitlementsFileName}`;
-
-    // Check if the entitlements file is already added to the project
     const files = xcodeProject.hash.project.objects.PBXFileReference;
-    const entitlementsFileExists = Object.values(files).some(
-      (file: any) => file && file.path === `"${entitlementsFileName}"`
-    );
-
-    if (entitlementsFileExists) {
-      ScreenRecorderLog.log(
-        `${entitlementsFileName} already exists in project. Skipping...`
-      );
-      return newConfig;
-    }
-
-    // Find the main app group (try multiple approaches)
     const groups = xcodeProject.hash.project.objects.PBXGroup;
     let mainAppGroupKey: string | null = null;
+    let mainAppGroupName: string | null = null;
 
-    // Debug: log all group names to understand the structure
     ScreenRecorderLog.log('Available groups:');
     for (const key in groups) {
       const group = groups[key];
@@ -41,19 +81,25 @@ export const withMainAppEntitlementsFile: ConfigPlugin<ConfigProps> = (
       }
     }
 
-    // Try different variations of the project name
+    const normalizedProjectName = projectName.replace(/\s/g, '');
     const searchNames = [
-      `"${projectName}"`, // Quoted version
-      projectName, // Unquoted version
-      `"${projectName}/"`, // With trailing slash
-      `${projectName}/`, // Unquoted with trailing slash
+      projectName,
+      normalizedProjectName,
+      `${projectName}/`,
+      `${normalizedProjectName}/`,
     ];
 
     for (const searchName of searchNames) {
       for (const key in groups) {
         const group = groups[key];
-        if (group && group.name === searchName) {
+        const groupName = getNormalizedString(group?.name);
+        const groupPath = getNormalizedString(group?.path);
+        const hasMatchedGroup =
+          groupName === searchName || groupPath === searchName;
+
+        if (group && hasMatchedGroup) {
           mainAppGroupKey = key;
+          mainAppGroupName = groupPath ?? groupName;
           ScreenRecorderLog.log(
             `Found main app group with name: ${searchName}`
           );
@@ -68,12 +114,22 @@ export const withMainAppEntitlementsFile: ConfigPlugin<ConfigProps> = (
       ScreenRecorderLog.log(
         'Trying to find main app group by looking for AppDelegate...'
       );
+
       for (const key in groups) {
         const group = groups[key];
+
         if (group && group.children) {
-          // Check if this group contains typical main app files
-          const hasMainAppFiles = group.children.some((childKey: string) => {
-            const file = files[childKey];
+          const hasMainAppFiles = group.children.some((childKey: unknown) => {
+            const childReferenceKey = getChildReferenceKey(childKey);
+            const isChildReferenceKeyUndefined =
+              typeof childReferenceKey === 'undefined';
+
+            if (isChildReferenceKeyUndefined) {
+              return false;
+            }
+
+            const file = files[childReferenceKey];
+
             return (
               file &&
               (file.path?.includes('AppDelegate') ||
@@ -84,6 +140,9 @@ export const withMainAppEntitlementsFile: ConfigPlugin<ConfigProps> = (
 
           if (hasMainAppFiles) {
             mainAppGroupKey = key;
+            const groupName = getNormalizedString(group.name);
+            const groupPath = getNormalizedString(group.path);
+            mainAppGroupName = groupPath ?? groupName;
             ScreenRecorderLog.log(
               `Found main app group by AppDelegate: ${group.name || 'unnamed'}`
             );
@@ -100,9 +159,33 @@ export const withMainAppEntitlementsFile: ConfigPlugin<ConfigProps> = (
       return newConfig;
     }
 
-    // Add the entitlements file to the project
+    const resolvedMainAppGroupName = mainAppGroupName ?? normalizedProjectName;
+    const entitlementsFileName = `${resolvedMainAppGroupName}.entitlements`;
+    const entitlementsPath = getMainAppEntitlementsPath(
+      xcodeProject,
+      resolvedMainAppGroupName,
+      entitlementsFileName
+    );
+
+    const entitlementsFileExists = Object.values(files).some((file: any) => {
+      const filePath = getNormalizedString(file?.path);
+      const fileName = getNormalizedString(file?.name);
+
+      return (
+        filePath === entitlementsPath ||
+        filePath === entitlementsFileName ||
+        fileName === entitlementsFileName
+      );
+    });
+
+    if (entitlementsFileExists) {
+      ScreenRecorderLog.log(
+        `${entitlementsFileName} already exists in project. Skipping...`
+      );
+      return newConfig;
+    }
+
     try {
-      // Create the file reference
       const fileRef = xcodeProject.addFile(entitlementsPath, mainAppGroupKey, {
         lastKnownFileType: 'text.plist.entitlements',
         defaultEncoding: 4,
