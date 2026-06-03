@@ -99,7 +99,7 @@ export const withMainAppEntitlementsFile: ConfigPlugin<ConfigProps> = (
 
         if (group && hasMatchedGroup) {
           mainAppGroupKey = key;
-          mainAppGroupName = groupPath ?? groupName;
+          mainAppGroupName = groupPath ?? groupName ?? null;
           ScreenRecorderLog.log(
             `Found main app group with name: ${searchName}`
           );
@@ -142,7 +142,7 @@ export const withMainAppEntitlementsFile: ConfigPlugin<ConfigProps> = (
             mainAppGroupKey = key;
             const groupName = getNormalizedString(group.name);
             const groupPath = getNormalizedString(group.path);
-            mainAppGroupName = groupPath ?? groupName;
+            mainAppGroupName = groupPath ?? groupName ?? null;
             ScreenRecorderLog.log(
               `Found main app group by AppDelegate: ${group.name || 'unnamed'}`
             );
