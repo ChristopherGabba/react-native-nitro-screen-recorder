@@ -11657,16 +11657,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-native-nitro-modules@npm:^0.33.8":
-  version: 0.33.8
-  resolution: "react-native-nitro-modules@npm:0.33.8"
-  peerDependencies:
-    react: "*"
-    react-native: "*"
-  checksum: 6624d9c98923929370e5cdac2191a809147f19c7e6a8c9349869313a5d51960d11f6e23bacdd80d144d04840b79d4e48869960c33a70ca75431d9c50104ab1fd
-  languageName: node
-  linkType: hard
-
 "react-native-nitro-modules@npm:^0.35.9":
   version: 0.35.10
   resolution: "react-native-nitro-modules@npm:0.35.10"
@@ -11702,7 +11692,7 @@ __metadata:
     react-native: 0.83.1
     react-native-builder-bob: ^0.40.12
     react-native-monorepo-config: ^0.1.9
-    react-native-nitro-modules: ^0.33.8
+    react-native-nitro-modules: 0.35.9
     react-native-nitro-screen-recorder: "*"
   languageName: unknown
   linkType: soft

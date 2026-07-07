@@ -6,10 +6,11 @@ import {
   ScrollView,
   Platform,
 } from 'react-native';
-import * as ScreenRecorder from '../../';
+import * as ScreenRecorder from '../../src';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { useState } from 'react';
 import { getVideoInfoAsync } from 'expo-video-metadata';
+import { PreparedConsentSection } from './PreparedConsentSection';
 
 export default function App() {
   const [inAppRecording, setInAppRecording] = useState<
@@ -221,6 +222,8 @@ export default function App() {
         <Text style={styles.playerLabel}>In-App Recording Player</Text>
         <VideoView player={inAppPlayer} style={styles.player} />
       </View>
+
+      <PreparedConsentSection />
 
       {/* Global Recording Section */}
       <View style={styles.section}>
