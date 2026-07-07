@@ -34,6 +34,8 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
   private var isServiceBound = false
   private var lastGlobalRecording: File? = null
   private var globalRecordingErrorCallback: ((RecordingError) -> Unit)? = null
+  @Volatile
+  private var isConsentRequestInFlight = false
 
   private val screenRecordingListeners =
     mutableListOf<Listener<(ScreenRecordingEvent) -> Unit>>()
@@ -151,6 +153,38 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
     }
   }
 
+  private fun getAuthoritativeSessionState(): ServiceState {
+    return ScreenRecordingService.getSessionStateSnapshot()
+  }
+
+  private fun hasScreenRecordingSession(): Boolean {
+    return getAuthoritativeSessionState() != ServiceState.IDLE
+  }
+
+  private fun toSessionState(state: ServiceState): ScreenRecordingSessionState {
+    return when (state) {
+      ServiceState.IDLE -> ScreenRecordingSessionState.IDLE
+      ServiceState.PREPARED -> ScreenRecordingSessionState.PREPARED
+      ServiceState.RECORDING -> ScreenRecordingSessionState.RECORDING
+    }
+  }
+
+  private suspend fun awaitActiveSession(
+    timeoutMs: Long = 2_000,
+    pollIntervalMs: Long = 50
+  ): Boolean {
+    val deadline = System.currentTimeMillis() + timeoutMs
+
+    while (System.currentTimeMillis() < deadline) {
+      if (hasScreenRecordingSession()) {
+        return true
+      }
+      delay(pollIntervalMs)
+    }
+
+    return hasScreenRecordingSession()
+  }
+
   private fun canRequestPermission(permission: String): Boolean {
     return NitroModules.applicationContext?.let { ctx ->
       val activity = ctx.currentActivity ?: return false
@@ -234,17 +268,19 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
     return requestPermission(android.Manifest.permission.RECORD_AUDIO)
   }
 
-  private fun requestGlobalRecordingPermission(): Promise<Pair<Int, Intent>> =
-    Promise.async {
-      val ctx = NitroModules.applicationContext ?: throw Error("NO_CONTEXT")
-      val activity = ctx.currentActivity ?: throw Error("NO_ACTIVITY")
-      val intent = mediaProjectionManager.createScreenCaptureIntent()
+  private suspend fun awaitScreenCaptureConsent(): Pair<Int, Intent> {
+    val ctx = NitroModules.applicationContext ?: throw Error("NO_CONTEXT")
+    val activity = ctx.currentActivity ?: throw Error("NO_ACTIVITY")
+    val intent = mediaProjectionManager.createScreenCaptureIntent()
 
-      suspendCancellableCoroutine<Pair<Int, Intent>> { cont ->
-        globalRecordingContinuation = cont
-        activity.startActivityForResult(intent, GLOBAL_RECORDING_REQUEST_CODE)
-      }
+    return suspendCancellableCoroutine<Pair<Int, Intent>> { cont ->
+      globalRecordingContinuation = cont
+      activity.startActivityForResult(intent, GLOBAL_RECORDING_REQUEST_CODE)
     }
+  }
+
+  private fun requestGlobalRecordingPermission(): Promise<Pair<Int, Intent>> =
+    Promise.async { awaitScreenCaptureConsent() }
 
   private var globalRecordingContinuation: kotlin.coroutines.Continuation<Pair<Int, Intent>>? =
     null
@@ -266,6 +302,90 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
         Log.w(TAG, "Received unhandled activity result for code: $requestCode")
       }
     }
+  }
+
+  override fun requestScreenRecordingConsent(): Promise<Boolean> = Promise.async {
+    val ctx = NitroModules.applicationContext ?: throw Error("NO_CONTEXT")
+
+    when (getAuthoritativeSessionState()) {
+      ServiceState.PREPARED,
+      ServiceState.RECORDING -> return@async true
+      ServiceState.IDLE -> Unit
+    }
+
+    if (isConsentRequestInFlight) {
+      return@async awaitActiveSession(timeoutMs = 5_000)
+    }
+
+    isConsentRequestInFlight = true
+    var didBindService = false
+
+    try {
+      if (!isServiceBound) {
+        val serviceIntent = Intent(ctx, ScreenRecordingService::class.java)
+        didBindService =
+          ctx.bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
+      }
+
+      val (resultCode, resultData) = awaitScreenCaptureConsent()
+
+      val prepareIntent = Intent(ctx, ScreenRecordingService::class.java).apply {
+        action = ScreenRecordingService.ACTION_PREPARE
+        putExtra(ScreenRecordingService.EXTRA_RESULT_CODE, resultCode)
+        putExtra(ScreenRecordingService.EXTRA_RESULT_DATA, resultData)
+      }
+
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        ctx.startForegroundService(prepareIntent)
+      } else {
+        ctx.startService(prepareIntent)
+      }
+
+      val hasActiveSession = awaitActiveSession(timeoutMs = 5_000)
+      if (!hasActiveSession) {
+        Log.w(TAG, "Timed out waiting for screen recording session to become active")
+      }
+
+      hasActiveSession
+    } finally {
+      if (!hasScreenRecordingSession() && (isServiceBound || didBindService)) {
+        try {
+          ctx.unbindService(serviceConnection)
+        } catch (error: IllegalArgumentException) {
+          Log.w(TAG, "Screen recording consent service was already unbound")
+        }
+        globalRecordingService = null
+        isServiceBound = false
+      }
+      isConsentRequestInFlight = false
+    }
+  }
+
+  override fun releaseScreenRecordingConsent() {
+    val ctx = NitroModules.applicationContext ?: return
+
+    if (getAuthoritativeSessionState() != ServiceState.PREPARED) {
+      return
+    }
+
+    val releaseIntent = Intent(ctx, ScreenRecordingService::class.java).apply {
+      action = ScreenRecordingService.ACTION_RELEASE
+    }
+    ctx.startService(releaseIntent)
+
+    if (isServiceBound) {
+      ctx.unbindService(serviceConnection)
+      globalRecordingService = null
+      isServiceBound = false
+    }
+  }
+
+  override fun isScreenRecordingConsentGranted(): Boolean {
+    return hasScreenRecordingSession()
+  }
+
+  override fun getScreenRecordingSessionState(): ScreenRecordingSessionState {
+    return toSessionState(getAuthoritativeSessionState())
   }
 
   // --- In-App Recording No-Op Methods ---
@@ -297,8 +417,12 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
 
   // --- Global Recording Methods ---
 
-  override fun startGlobalRecording(enableMic: Boolean, onRecordingError: (RecordingError) -> Unit) {
-    if (globalRecordingService?.isCurrentlyRecording() == true) {
+  override fun startGlobalRecording(
+    enableMic: Boolean,
+    usePreparedConsent: Boolean,
+    onRecordingError: (RecordingError) -> Unit
+  ) {
+    if (getAuthoritativeSessionState() == ServiceState.RECORDING) {
       Log.w(TAG, "⚠️ Global recording already in progress")
       return
     }
@@ -306,6 +430,26 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
 
     // Store the error callback so it can be used by the service
     globalRecordingErrorCallback = onRecordingError
+
+    if (usePreparedConsent) {
+      if (getAuthoritativeSessionState() != ServiceState.PREPARED) {
+        onRecordingError(
+          RecordingError(
+            name = "PreparedConsentNotAvailable",
+            message = "Call requestScreenRecordingConsent() before starting with usePreparedConsent."
+          )
+        )
+        return
+      }
+
+      val startIntent = Intent(ctx, ScreenRecordingService::class.java).apply {
+        action = ScreenRecordingService.ACTION_START_RECORDING
+        putExtra(ScreenRecordingService.EXTRA_ENABLE_MIC, enableMic)
+        putExtra(ScreenRecordingService.EXTRA_USE_PREPARED_CONSENT, true)
+      }
+      ctx.startService(startIntent)
+      return
+    }
 
     requestGlobalRecordingPermission().then { (resultCode, resultData) ->
       if (!isServiceBound) {
@@ -318,6 +462,7 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
         putExtra(ScreenRecordingService.EXTRA_RESULT_CODE, resultCode)
         putExtra(ScreenRecordingService.EXTRA_RESULT_DATA, resultData)
         putExtra(ScreenRecordingService.EXTRA_ENABLE_MIC, enableMic) // Use the parameter instead of hardcoded true
+        putExtra(ScreenRecordingService.EXTRA_USE_PREPARED_CONSENT, false)
       }
 
       if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -338,7 +483,7 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
     return Promise.async {
       val ctx = NitroModules.applicationContext ?: return@async null
 
-      if (globalRecordingService?.isCurrentlyRecording() != true) {
+      if (getAuthoritativeSessionState() != ServiceState.RECORDING) {
         Log.w(TAG, "No active recording to stop")
         return@async null
       }
@@ -350,6 +495,7 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
 
       if (isServiceBound) {
         ctx.unbindService(serviceConnection)
+        globalRecordingService = null
         isServiceBound = false
       }
 
