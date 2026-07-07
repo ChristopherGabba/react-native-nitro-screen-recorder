@@ -157,6 +157,13 @@ export type InAppRecordingInput = {
 export type GlobalRecordingInputOptions = {
   /** Whether to record microphone audio during the global recording. */
   enableMic: boolean;
+  /**
+   * Android only: start from a previously prepared MediaProjection consent
+   * session instead of showing the system consent dialog at start time.
+   *
+   * Defaults to false to preserve existing recording behavior.
+   */
+  usePreparedConsent?: boolean;
 };
 
 /**
@@ -283,3 +290,12 @@ export interface ScreenRecordingEvent {
  * Track the status of the broadcast picker view for fine tuning system recordings.
  */
 export type BroadcastPickerPresentationEvent = 'showing' | 'dismissed';
+
+/**
+ * Android only: current MediaProjection consent/recording session state.
+ *
+ * - `idle`: no prepared consent or active global recording exists
+ * - `prepared`: consent was granted and is ready to be used for recording
+ * - `recording`: a global recording is currently active
+ */
+export type ScreenRecordingSessionState = 'idle' | 'prepared' | 'recording';

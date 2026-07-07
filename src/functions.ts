@@ -8,6 +8,7 @@ import type {
   PermissionStatus,
   GlobalRecordingInput,
   BroadcastPickerPresentationEvent,
+  ScreenRecordingSessionState,
 } from './types';
 import { Platform } from 'react-native';
 
@@ -195,6 +196,52 @@ export async function cancelInAppRecording(): Promise<void> {
 }
 
 // ============================================================================
+// SCREEN RECORDING CONSENT
+// ============================================================================
+
+/**
+ * Requests screen recording consent before recording starts.
+ *
+ * @platform Android
+ * @returns Promise resolving to true when a prepared recording session exists.
+ * On iOS, resolves to true because ReplayKit uses the broadcast picker flow.
+ */
+export async function requestScreenRecordingConsent(): Promise<boolean> {
+  if (!isAndroid) return true;
+  return NitroScreenRecorderHybridObject.requestScreenRecordingConsent();
+}
+
+/**
+ * Releases a previously prepared screen recording consent session.
+ *
+ * @platform Android
+ */
+export function releaseScreenRecordingConsent(): void {
+  if (!isAndroid) return;
+  NitroScreenRecorderHybridObject.releaseScreenRecordingConsent();
+}
+
+/**
+ * Returns whether a prepared or active screen recording session exists.
+ *
+ * @platform Android
+ */
+export function isScreenRecordingConsentGranted(): boolean {
+  if (!isAndroid) return false;
+  return NitroScreenRecorderHybridObject.isScreenRecordingConsentGranted();
+}
+
+/**
+ * Returns the current prepared-consent session state.
+ *
+ * @platform iOS, Android
+ */
+export function getScreenRecordingSessionState(): ScreenRecordingSessionState {
+  if (!isAndroid) return 'idle';
+  return NitroScreenRecorderHybridObject.getScreenRecordingSessionState();
+}
+
+// ============================================================================
 // GLOBAL RECORDING
 // ============================================================================
 
@@ -222,6 +269,7 @@ export function startGlobalRecording(input: GlobalRecordingInput): void {
   }
   return NitroScreenRecorderHybridObject.startGlobalRecording(
     input?.options?.enableMic ?? false,
+    input?.options?.usePreparedConsent ?? false,
     input?.onRecordingError
   );
 }
