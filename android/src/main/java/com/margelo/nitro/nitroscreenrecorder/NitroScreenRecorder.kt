@@ -18,9 +18,10 @@ import com.margelo.nitro.NitroModules
 import com.margelo.nitro.core.*
 import com.margelo.nitro.nitroscreenrecorder.utils.RecorderUtils
 import java.io.File
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 
 data class Listener<T>(val id: Double, val callback: T)
 
@@ -169,20 +170,38 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
     }
   }
 
-  private suspend fun awaitActiveSession(
-    timeoutMs: Long = 2_000,
-    pollIntervalMs: Long = 50
-  ): Boolean {
-    val deadline = System.currentTimeMillis() + timeoutMs
-
-    while (System.currentTimeMillis() < deadline) {
-      if (hasScreenRecordingSession()) {
-        return true
-      }
-      delay(pollIntervalMs)
+  private suspend fun awaitSessionState(
+    timeoutMs: Long,
+    predicate: (ServiceState) -> Boolean
+  ): ServiceState? {
+    val currentState = getAuthoritativeSessionState()
+    if (predicate(currentState)) {
+      return currentState
     }
 
-    return hasScreenRecordingSession()
+    return withTimeoutOrNull(timeoutMs) {
+      suspendCancellableCoroutine<ServiceState> { cont ->
+        var removeListener: (() -> Unit)? = null
+
+        fun complete(state: ServiceState) {
+          if (predicate(state) && cont.isActive) {
+            removeListener?.invoke()
+            cont.resume(state)
+          }
+        }
+
+        removeListener = ScreenRecordingService.addSessionStateListener { state ->
+          complete(state)
+        }
+
+        cont.invokeOnCancellation {
+          removeListener?.invoke()
+        }
+
+        val latestState = getAuthoritativeSessionState()
+        complete(latestState)
+      }
+    }
   }
 
   private fun canRequestPermission(permission: String): Boolean {
@@ -314,7 +333,9 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
     }
 
     if (isConsentRequestInFlight) {
-      return@async awaitActiveSession(timeoutMs = 5_000)
+      return@async awaitSessionState(timeoutMs = 5_000) {
+        it != ServiceState.IDLE
+      } != null
     }
 
     isConsentRequestInFlight = true
@@ -341,7 +362,9 @@ class NitroScreenRecorder : HybridNitroScreenRecorderSpec() {
         ctx.startService(prepareIntent)
       }
 
-      val hasActiveSession = awaitActiveSession(timeoutMs = 5_000)
+      val hasActiveSession = awaitSessionState(timeoutMs = 5_000) {
+        it != ServiceState.IDLE
+      } != null
       if (!hasActiveSession) {
         Log.w(TAG, "Timed out waiting for screen recording session to become active")
       }

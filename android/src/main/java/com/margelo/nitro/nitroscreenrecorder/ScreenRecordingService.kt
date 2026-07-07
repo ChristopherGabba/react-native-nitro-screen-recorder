@@ -15,6 +15,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.margelo.nitro.nitroscreenrecorder.utils.RecorderUtils
 import java.io.File
+import java.util.concurrent.CopyOnWriteArrayList
 
 enum class ServiceState {
   IDLE,
@@ -56,6 +57,7 @@ class ScreenRecordingService : Service() {
     private const val CHANNEL_ID = "screen_recording_channel"
     @Volatile
     private var sessionStateSnapshot: ServiceState = ServiceState.IDLE
+    private val sessionStateListeners = CopyOnWriteArrayList<(ServiceState) -> Unit>()
 
     const val ACTION_PREPARE = "PREPARE"
     const val ACTION_START_RECORDING = "START_RECORDING"
@@ -67,6 +69,13 @@ class ScreenRecordingService : Service() {
     const val EXTRA_USE_PREPARED_CONSENT = "USE_PREPARED_CONSENT"
 
     fun getSessionStateSnapshot(): ServiceState = sessionStateSnapshot
+
+    fun addSessionStateListener(listener: (ServiceState) -> Unit): () -> Unit {
+      sessionStateListeners.add(listener)
+      return {
+        sessionStateListeners.remove(listener)
+      }
+    }
   }
 
   inner class LocalBinder : Binder() {
@@ -93,6 +102,9 @@ class ScreenRecordingService : Service() {
   private fun updateState(newState: ServiceState) {
     state = newState
     sessionStateSnapshot = newState
+    sessionStateListeners.forEach { listener ->
+      listener(newState)
+    }
     Log.d(TAG, "🧭 Session state updated to $newState")
   }
 
