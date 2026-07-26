@@ -8,6 +8,7 @@ import type {
   PermissionStatus,
   RecordingError,
   BroadcastPickerPresentationEvent,
+  ScreenRecordingSessionState,
 } from './types';
 
 /**
@@ -20,8 +21,10 @@ import type {
  *
  */
 
-export interface NitroScreenRecorder
-  extends HybridObject<{ ios: 'swift'; android: 'kotlin' }> {
+export interface NitroScreenRecorder extends HybridObject<{
+  ios: 'swift';
+  android: 'kotlin';
+}> {
   // ============================================================================
   // PERMISSIONS
   // ============================================================================
@@ -62,11 +65,21 @@ export interface NitroScreenRecorder
   cancelInAppRecording(): Promise<void>;
 
   // ============================================================================
+  // SCREEN RECORDING CONSENT
+  // ============================================================================
+
+  requestScreenRecordingConsent(): Promise<boolean>;
+  releaseScreenRecordingConsent(): void;
+  isScreenRecordingConsentGranted(): boolean;
+  getScreenRecordingSessionState(): ScreenRecordingSessionState;
+
+  // ============================================================================
   // GLOBAL RECORDING
   // ============================================================================
 
   startGlobalRecording(
     enableMic: boolean,
+    usePreparedConsent: boolean,
     onRecordingError: (error: RecordingError) => void
   ): void;
   stopGlobalRecording(

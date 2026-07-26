@@ -452,9 +452,26 @@ class NitroScreenRecorder: HybridNitroScreenRecorderSpec {
     }
   }
 
-  func startGlobalRecording(enableMic: Bool, onRecordingError: @escaping (RecordingError) -> Void)
-    throws
-  {
+  func requestScreenRecordingConsent() throws -> Promise<Bool> {
+    return Promise.async { return true }
+  }
+
+  func releaseScreenRecordingConsent() throws {
+  }
+
+  func isScreenRecordingConsentGranted() throws -> Bool {
+    return false
+  }
+
+  func getScreenRecordingSessionState() throws -> ScreenRecordingSessionState {
+    return .idle
+  }
+
+  func startGlobalRecording(
+    enableMic: Bool,
+    usePreparedConsent: Bool,
+    onRecordingError: @escaping (RecordingError) -> Void
+  ) throws {
     guard !isGlobalRecordingActive else {
       print("⚠️ Attempted to start a global recording, but one is already active.")
       let error = RecordingError(

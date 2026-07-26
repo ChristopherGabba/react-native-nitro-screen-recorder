@@ -320,7 +320,9 @@ export default function ScreenRecorderExample() {
     }
 
     startGlobalRecording({
-      enableMic: true,
+      options: {
+        enableMic: true,
+      },
       onRecordingError: (error) => {
         Alert.alert('Global recording error', error.message);
       },
@@ -368,6 +370,11 @@ export default function ScreenRecorderExample() {
   - [`startInAppRecording()`](#startinapprecordinginput-promisevoid)
   - [`stopInAppRecording()`](#stopinapprecording-promisescreenrecordingfile--undefined)
   - [`cancelInAppRecording()`](#cancelinapprecording-promisevoid)
+- [Screen Recording Consent](#screen-recording-consent)
+  - [`requestScreenRecordingConsent()`](#requestscreenrecordingconsent-promiseboolean)
+  - [`releaseScreenRecordingConsent()`](#releasescreenrecordingconsent-void)
+  - [`isScreenRecordingConsentGranted()`](#isscreenrecordingconsentgranted-boolean)
+  - [`getScreenRecordingSessionState()`](#getscreenrecordingsessionstate-screenrecordingsessionstate)
 - [Global Recording](#global-recording)
   - [`startGlobalRecording()`](#startglobalrecordinginput-void)
   - [`stopGlobalRecording()`](#stopglobalrecording-promisescreenrecordingfile--undefined)
@@ -554,10 +561,10 @@ Starts in-app screen recording with the specified configuration. Records only th
 
 **Parameters:**
 
-- `enableMic`: boolean - Whether to enable microphone audio
-- `enableCamera`: boolean - Whether to enable camera overlay
-- `cameraPreviewStyle`: RecorderCameraStyle - Camera positioning and styling
-- `cameraDevice`: CameraDevice - Front or back camera
+- `options.enableMic`: boolean - Whether to enable microphone audio
+- `options.enableCamera`: boolean - Whether to enable camera overlay
+- `options.cameraPreviewStyle`: RecorderCameraStyle - Camera positioning and styling
+- `options.cameraDevice`: CameraDevice - Front or back camera
 - `onRecordingFinished`: (file: ScreenRecordingFile) => void - Callback when recording completes
 
 **Example:**
@@ -566,10 +573,12 @@ Starts in-app screen recording with the specified configuration. Records only th
 import { startInAppRecording } from 'react-native-nitro-screen-recorder';
 
 await startInAppRecording({
-  enableMic: true,
-  enableCamera: true,
-  cameraPreviewStyle: { width: 100, height: 150, top: 30, left: 10 },
-  cameraDevice: 'front',
+  options: {
+    enableMic: true,
+    enableCamera: true,
+    cameraPreviewStyle: { width: 100, height: 150, top: 30, left: 10 },
+    cameraDevice: 'front',
+  },
   onRecordingFinished: (file) => {
     console.log('Recording saved:', file.path);
   },
@@ -609,6 +618,71 @@ import { cancelInAppRecording } from 'react-native-nitro-screen-recorder';
 await cancelInAppRecording(); // Recording discarded, no file saved
 ```
 
+## Screen Recording Consent
+
+### `requestScreenRecordingConsent(): Promise<boolean>`
+
+Requests Android screen-capture consent before recording starts and prepares a session for later use.
+
+**Platform:** Android only. On iOS this resolves to `true` as a compatibility no-op.
+
+**Returns:** Promise that resolves with `true` when a prepared session is available.
+
+**Example:**
+
+```ts
+import { requestScreenRecordingConsent } from 'react-native-nitro-screen-recorder';
+
+const prepared = await requestScreenRecordingConsent();
+if (prepared) {
+  // Later, call startGlobalRecording with usePreparedConsent: true.
+}
+```
+
+### `releaseScreenRecordingConsent(): void`
+
+Releases a prepared Android screen recording session if the user cancels the flow before recording starts.
+
+**Platform:** Android only. On iOS this is a compatibility no-op.
+
+**Example:**
+
+```ts
+import { releaseScreenRecordingConsent } from 'react-native-nitro-screen-recorder';
+
+releaseScreenRecordingConsent();
+```
+
+### `isScreenRecordingConsentGranted(): boolean`
+
+Returns whether an Android prepared or active screen recording session exists.
+
+**Platform:** Android only. On iOS this returns `false`.
+
+**Example:**
+
+```ts
+import { isScreenRecordingConsentGranted } from 'react-native-nitro-screen-recorder';
+
+const hasPreparedSession = isScreenRecordingConsentGranted();
+```
+
+### `getScreenRecordingSessionState(): ScreenRecordingSessionState`
+
+Returns the current screen recording session state.
+
+**Platform:** iOS, Android
+
+**Returns:** `"idle"`, `"prepared"`, or `"recording"`. iOS always returns `"idle"`.
+
+**Example:**
+
+```ts
+import { getScreenRecordingSessionState } from 'react-native-nitro-screen-recorder';
+
+const state = getScreenRecordingSessionState();
+```
+
 ## Global Recording
 
 ### `startGlobalRecording(input): void`
@@ -619,12 +693,15 @@ Starts global screen recording that captures the entire device screen. Records s
 
 **Parameters:**
 
-- `enableMic`: boolean - Whether to enable microphone audio
+- `options.enableMic`: boolean - Whether to enable microphone audio
+- `options.usePreparedConsent?: boolean` - Android only. When `true`, starts from a session created by `requestScreenRecordingConsent()` instead of showing the system consent dialog.
 - `onRecordingError`: (error: RecordingError) => void - Error callback
 
 **Throws:**
 
 - `Error`: If microphone permission is not granted on Android when `enableMic` is `true`.
+
+When `usePreparedConsent` is `true` but no prepared Android session exists, `onRecordingError` receives `PreparedConsentNotAvailable`. The default is `false`, so existing calls keep the original system prompt behavior.
 
 **Example:**
 
@@ -632,11 +709,35 @@ Starts global screen recording that captures the entire device screen. Records s
 import { startGlobalRecording } from 'react-native-nitro-screen-recorder';
 
 startGlobalRecording({
-  enableMic: true, // enableMic
+  options: {
+    enableMic: true,
+  },
   onRecordingError: (error) => {
     console.error('Global recording error:', error.message);
   },
 });
+```
+
+**Prepared consent example (Android only):**
+
+```ts
+import {
+  requestScreenRecordingConsent,
+  startGlobalRecording,
+} from 'react-native-nitro-screen-recorder';
+
+const prepared = await requestScreenRecordingConsent();
+if (prepared) {
+  startGlobalRecording({
+    options: {
+      enableMic: true,
+      usePreparedConsent: true,
+    },
+    onRecordingError: (error) => {
+      console.error('Global recording error:', error.message);
+    },
+  });
+}
 ```
 
 ### `stopGlobalRecording(options?): Promise<ScreenRecordingFile | undefined>`
