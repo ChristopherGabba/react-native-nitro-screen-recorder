@@ -34,8 +34,7 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION",
         "android.permission.POST_NOTIFICATIONS"
-      ],
-      "edgeToEdgeEnabled": true
+      ]
     },
     "plugins": [
       "expo-video",
@@ -49,7 +48,8 @@
           "showPluginLogs": true,
           "iosBroadcastExtensionTargetName": "ScreenRecorder"
         }
-      ]
+      ],
+      "expo-status-bar"
     ]
   }
 }

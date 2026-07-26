@@ -9,8 +9,14 @@
   },
   "autolinking": {
     "NitroScreenRecorder": {
-      "swift": "NitroScreenRecorder",
-      "kotlin": "NitroScreenRecorder"
+      "ios": {
+        "language": "swift",
+        "implementationClassName": "NitroScreenRecorder"
+      },
+      "android": {
+        "language": "kotlin",
+        "implementationClassName": "NitroScreenRecorder"
+      }
     }
   },
   "ignorePaths": ["node_modules"]
